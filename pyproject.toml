@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-tool-agent"
+version = "0.1.0"
+description = "A production-oriented multi-tool knowledge base agent skeleton."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.116.0",
+  "httpx>=0.28.0",
+  "pydantic>=2.11.0",
+  "pydantic-settings>=2.10.0",
+  "pypdf>=5.0.0",
+  "qdrant-client>=1.14.2",
+  "uvicorn[standard]>=0.35.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+]
+local-embeddings = [
+  "sentence-transformers>=5.4.1",
+]
+postgres = [
+  "psycopg[binary]>=3.2.9",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

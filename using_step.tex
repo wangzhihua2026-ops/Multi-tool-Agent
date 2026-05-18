@@ -1,0 +1,452 @@
+下面是当前项目的操作手册 + 功能亮点 + 实现路径。按“用户怎么用、开发者怎么理解、后续怎么扩展”来梳理。
+
+一、怎么打开
+
+在项目目录：
+
+powershell
+
+
+
+cd F:\Project_Loverboy01
+.\.venv312\Scripts\python.exe -m uvicorn app.api.server:app --host 127.0.0.1 --port 8000
+
+
+
+然后浏览器打开：
+
+text
+
+
+
+http://127.0.0.1:8000/app/
+
+
+
+也可以用启动脚本：
+
+powershell
+
+
+
+powershell -ExecutionPolicy Bypass -File .\scripts\start-agent-app.ps1
+
+
+
+配置主要看：
+
+
+.env.example (line 1)
+
+.env.local-embeddings.example (line 1)
+
+
+二、用户操作手册
+
+页面分三大区：
+
+
+Documents
+
+用于上传和管理知识库文档。
+
+支持：
+
+
+直接粘贴文本
+
+上传 TXT / Markdown / CSV / JSON / HTML / XML
+
+上传 PDF
+
+上传 DOCX
+
+
+操作流程：
+
+打开 Documents
+点开 Add or Update Knowledge
+填标题，或选择文件自动带出标题
+可选填 metadata JSON
+点击 Upload document
+上传成功后会显示 chunk 数量和索引状态
+
+上传后可以：
+
+
+在 Stored Documents 里查看文档
+
+在 Document Detail 里看全文
+
+用 Search 做知识库检索
+
+点 Reindex stored documents 重建索引
+
+
+
+
+Agent Chat
+
+用于和 Agent 对话。
+
+常见问法：
+
+text
+
+
+
+请搜索知识库，总结这份文档的核心内容
+
+
+
+text
+
+
+
+请从我上传的 CCF 推荐目录里找出所有 C 类期刊，不要会议，输出完整列表
+
+
+
+text
+
+
+
+先查知识库里的部署步骤，再总结成 checklist
+
+
+
+当前 Agent 支持：
+
+
+会话记忆
+
+多步工具调用
+
+知识库搜索
+
+通用全文抽取
+
+计算器
+
+高风险工具审批暂停
+
+
+
+
+Paused Actions
+
+用于处理高风险动作。
+
+例如 send_email 工具是高风险工具。Agent 如果计划发邮件，会暂停，页面会出现审批卡片。
+
+用户可以：
+
+
+Approve
+
+Reject
+
+查看 run detail
+
+查看技术事件流
+
+
+
+
+三、功能亮点
+
+
+本地优先的 Agent 应用
+
+默认只允许本机访问 API。远程访问需要配置 token。
+
+相关实现：
+
+
+middleware.py (line 13)
+
+
+
+
+文档上传能力比较完整
+
+已支持文本、PDF、DOCX，并加了安全限制：
+
+
+最大上传文件大小
+
+最大抽取文本长度
+
+PDF 最大页数
+
+
+相关实现：
+
+
+document_file_parser.py (line 55)
+
+config.py (line 40)
+
+
+
+
+RAG 检索不是纯向量，采用 hybrid
+
+检索逻辑是：
+
+
+lexical 关键词匹配
+
+vector 相似度匹配
+
+两者加权融合
+
+
+相关实现：
+
+
+retriever.py (line 9)
+
+
+
+
+通用全文抽取能力
+
+对“列出所有”“完整抽取”“排除某类”这类任务，不再只取少量 RAG chunk，而是直接扫全文。
+
+例如：
+
+text
+
+
+
+找出所有 C 类期刊，不要会议
+
+
+
+会走：
+
+text
+
+
+
+extract_document_items
+
+
+
+相关实现：
+
+
+document_extractor.py (line 65)
+
+
+
+
+多步工具 Agent
+
+Runtime 支持最多 MAX_TOOL_STEPS 轮：
+
+text
+
+
+
+plan -> tool -> plan -> tool -> answer
+
+
+
+相关实现：
+
+
+runtime.py (line 25)
+
+
+
+
+审批幂等和并发保护
+
+高风险工具审批时用原子 claim，重复点击不会重复执行。
+
+相关实现：
+
+
+approval_service.py (line 31)
+
+run_repository.py (line 119)
+
+
+
+
+工具系统可扩展
+
+当前内置工具：
+
+
+calculator
+
+extract_document_items
+
+extract_ccf_c_journals
+
+search_knowledge_base
+
+send_email
+
+
+工具注册入口：
+
+
+dependencies.py (line 104)
+
+
+
+
+MCP HTTP 工具接入
+
+当前支持：
+
+
+mock MCP
+
+HTTP / streamable_http MCP
+
+tools/list discovery
+
+tools/call
+
+
+相关实现：
+
+
+adapter.py (line 13)
+
+
+
+
+四、整体实现路径
+
+核心调用链是：
+
+text
+
+
+
+浏览器 /app
+  -> FastAPI /api/chat/stream
+  -> ChatService
+  -> AgentRuntime
+  -> LLMGateway plan
+  -> ToolExecutor
+  -> Built-in Tool / MCP Tool / RAG
+  -> AgentRuntime answer
+  -> SSE 返回前端
+  -> Run + Message 持久化
+
+
+
+对应代码：
+
+
+前端页面：index.html (line 1)
+
+前端逻辑：app.js (line 1)
+
+API 入口：server.py (line 10)
+
+聊天 API：chat.py (line 22)
+
+聊天服务：chat_service.py (line 12)
+
+Agent Runtime：runtime.py (line 14)
+
+LLM Gateway：llm_gateway.py (line 39)
+
+工具执行器：executor.py (line 8)
+
+
+五、数据存储
+
+当前主要是本地存储：
+
+
+文档知识库
+
+默认 SQLite：
+
+text
+
+
+
+data/knowledge_base.db
+
+
+
+可切 Postgres。
+
+
+
+Agent run / message
+
+默认 SQLite：
+
+text
+
+
+
+data/multi_tool_agent.db
+
+
+
+
+
+向量库
+
+支持：
+
+
+memory
+
+qdrant_local
+
+qdrant HTTP
+
+
+当前推荐本地：
+
+text
+
+
+
+VECTOR_STORE_PROVIDER=qdrant_local
+
+
+
+
+
+六、当前边界
+
+已经适合本地或小团队试用，但还不是完整生产系统。
+
+主要待补：
+
+
+reindex job 状态仍是内存态，重启会丢
+
+MCP stdio transport 还没实现
+
+通用表格理解还偏规则化，复杂 PDF 表格需要增强
+
+还没有用户体系/多租户权限
+
+没有导出长抽取结果为 CSV/XLSX 的能力
+
+
+七、开发者扩展方式
+
+如果要加一个新工具：
+
+在 app/tools/builtins/ 新建工具文件
+定义 ToolDefinition
+写 handler，返回 ToolExecutionResult
+在 dependencies.py (line 104) 注册
+如果要模型主动调用，更新 prompt 或 planner 规则
+补测试

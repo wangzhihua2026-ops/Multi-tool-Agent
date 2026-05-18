@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi Tool Agent Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero reveal">
+      <div class="hero-copy">
+        <p class="eyebrow">LOCAL AGENT APPLICATION</p>
+        <h1 id="app-title">Multi Tool Agent Console</h1>
+        <p class="hero-text">
+          Upload knowledge, chat with the agent, and step in only when a high-risk action pauses for confirmation.
+        </p>
+        <div class="hero-inline">
+          <span class="hero-inline-label">Knowledge workspace</span>
+          <span class="hero-inline-meta">API <strong id="api-prefix">/api</strong></span>
+        </div>
+      </div>
+      <div class="hero-status">
+        <div class="status-card status-card-compact">
+          <span class="label">Service</span>
+          <strong id="health-status">Checking...</strong>
+          <span id="health-detail" class="muted">Waiting for API response.</span>
+          <div class="status-meta-row">
+            <span class="label">Mode</span>
+            <span class="muted">Ready for chat, search, and approvals.</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace-grid">
+      <section class="panel panel-documents reveal" aria-labelledby="knowledge-title">
+        <div class="panel-header">
+          <div>
+            <p class="panel-kicker">Knowledge Base</p>
+            <h2 id="knowledge-title">Documents</h2>
+          </div>
+          <button id="refresh-documents" class="ghost-button" type="button">Refresh</button>
+        </div>
+
+        <details id="document-upload-panel" class="subpanel upload-panel">
+          <summary class="advanced-summary">
+            <span>Add or Update Knowledge</span>
+            <span class="muted">File or text</span>
+          </summary>
+          <form id="document-form" class="stack-form upload-form">
+            <label>
+              <span>Title</span>
+              <input id="document-title" name="title" type="text" placeholder="deployment-guide">
+            </label>
+            <label>
+              <span>Document file</span>
+              <input
+                id="document-file"
+                name="file"
+                type="file"
+                accept=".txt,.text,.md,.markdown,.csv,.json,.jsonl,.yaml,.yml,.html,.htm,.xml,.log,.pdf,.docx,text/*,application/json,application/xml,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              >
+              <small id="document-file-status" class="field-hint">Choose a TXT, Markdown, CSV, JSON, HTML, XML, PDF, or DOCX file.</small>
+            </label>
+            <label>
+              <span>Metadata (JSON)</span>
+              <textarea id="document-metadata" name="metadata" rows="3" placeholder='{"team":"platform"}'></textarea>
+            </label>
+            <label>
+              <span>Content</span>
+              <textarea id="document-content" name="content" rows="8" placeholder="Paste content here, or leave empty when uploading a file."></textarea>
+            </label>
+            <div class="action-row">
+              <button class="primary-button" type="submit">Upload document</button>
+            </div>
+          </form>
+          <div class="maintenance-row">
+            <button id="reindex-documents" class="secondary-button" type="button">Reindex stored documents</button>
+            <span class="muted">Use this after changing embeddings or rebuilding vectors.</span>
+          </div>
+        </details>
+
+        <form id="search-form" class="inline-form search-form-prominent">
+          <input id="search-query" name="query" type="text" placeholder="Search the knowledge base for policy, notes, and excerpts">
+          <button class="secondary-button" type="submit">Search</button>
+        </form>
+
+        <div class="subpanel">
+          <div class="subpanel-header">
+            <h3>Search Results</h3>
+            <span id="search-result-count" class="chip">0</span>
+          </div>
+          <div id="search-results" class="list-view empty-state">Search results will appear here.</div>
+        </div>
+
+        <div class="subpanel">
+          <div class="subpanel-header">
+            <h3>Stored Documents</h3>
+            <span id="document-count" class="chip">0</span>
+          </div>
+          <div id="document-list" class="list-view empty-state">No documents yet.</div>
+        </div>
+
+        <div class="subpanel document-detail-panel">
+          <div class="subpanel-header">
+            <h3>Document Detail</h3>
+            <span id="document-detail-meta" class="muted">Select a document.</span>
+          </div>
+          <pre id="document-detail" class="detail-surface">Choose a document to inspect its full content.</pre>
+        </div>
+      </section>
+
+      <section class="panel panel-chat panel-wide reveal" aria-labelledby="chat-title">
+        <div class="panel-header">
+          <div>
+            <p class="panel-kicker">Conversation</p>
+            <h2 id="chat-title">Agent Chat</h2>
+          </div>
+          <button id="refresh-session" class="ghost-button" type="button">Reload session</button>
+        </div>
+
+        <form id="chat-form" class="stack-form">
+          <label>
+            <span>Session ID</span>
+            <input id="session-id" name="session_id" type="text" placeholder="demo-session">
+          </label>
+          <label>
+            <span>Message</span>
+            <textarea id="chat-message" name="message" rows="5" required placeholder="Ask the agent to search the knowledge base or use tools."></textarea>
+          </label>
+          <div class="action-row">
+            <button class="primary-button" type="submit">Send message</button>
+            <button id="generate-session" class="secondary-button" type="button">Generate session</button>
+          </div>
+        </form>
+
+        <div id="live-banner" class="banner hidden"></div>
+
+        <div class="status-strip">
+          <article class="mini-card">
+            <span class="label">Current Session</span>
+            <strong id="session-label">No session loaded.</strong>
+            <span class="muted">Conversation memory is grouped by session.</span>
+          </article>
+          <article class="mini-card">
+            <span class="label">Run Status</span>
+            <strong id="run-status-label">Idle</strong>
+            <span id="run-label" class="muted">No active run.</span>
+          </article>
+          <article class="mini-card">
+            <span class="label">Action State</span>
+            <strong id="action-state-label">Ready</strong>
+            <span id="action-state-detail" class="muted">The agent can accept a new message.</span>
+          </article>
+        </div>
+
+        <div class="subpanel">
+          <div class="subpanel-header">
+            <h3>Conversation Transcript</h3>
+            <span class="muted">User-facing responses only.</span>
+          </div>
+          <div id="message-list" class="message-list empty-state">Messages will appear here.</div>
+        </div>
+
+        <details class="subpanel advanced-panel">
+          <summary class="advanced-summary">
+            <span>Technical Event Stream</span>
+            <span class="muted">Advanced debugging only</span>
+          </summary>
+          <div id="event-timeline" class="timeline empty-state">Run events will stream here.</div>
+        </details>
+      </section>
+
+      <section class="panel panel-actions reveal" aria-labelledby="operations-title">
+        <div class="panel-header">
+          <div>
+            <p class="panel-kicker">Action Center</p>
+            <h2 id="operations-title">Paused Actions</h2>
+          </div>
+          <button id="refresh-runs" class="ghost-button" type="button">Refresh</button>
+        </div>
+
+        <div class="subpanel">
+          <div class="subpanel-header">
+            <h3>Waiting for Your Decision</h3>
+            <span id="paused-count" class="chip">0</span>
+          </div>
+          <div id="paused-run-list" class="list-view empty-state">No paused actions right now.</div>
+        </div>
+
+        <details class="subpanel advanced-panel">
+          <summary class="advanced-summary">
+            <span>Advanced Activity</span>
+            <span class="muted">Runs, payloads, and tool inventory</span>
+          </summary>
+
+          <div class="subpanel nested-subpanel">
+            <div class="subpanel-header">
+              <h3>Recent Runs</h3>
+              <span id="run-count" class="chip">0</span>
+            </div>
+            <div id="run-list" class="list-view empty-state">Runs will appear here.</div>
+          </div>
+
+          <div class="subpanel nested-subpanel">
+            <div class="subpanel-header">
+              <h3>Run Detail</h3>
+              <span id="run-detail-status" class="muted">Select a run.</span>
+            </div>
+            <div id="run-detail" class="detail-column empty-state">Detailed event payloads appear here.</div>
+            <div id="approval-actions" class="action-row hidden">
+              <button id="approve-run" class="primary-button" type="button">Approve pending tool</button>
+              <button id="reject-run" class="danger-button" type="button">Reject pending tool</button>
+            </div>
+          </div>
+
+          <div class="subpanel nested-subpanel">
+            <div class="subpanel-header">
+              <h3>Registered Tools</h3>
+              <span id="tool-count" class="chip">0</span>
+            </div>
+            <div id="tool-list" class="list-view empty-state">Tool metadata will appear here.</div>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <template id="message-template">
+    <article class="message-card">
+      <header>
+        <span class="message-role"></span>
+        <span class="message-time muted"></span>
+      </header>
+      <p class="message-content"></p>
+    </article>
+  </template>
+
+  <template id="timeline-template">
+    <article class="timeline-item">
+      <header>
+        <strong class="timeline-type"></strong>
+        <span class="timeline-time muted"></span>
+      </header>
+      <pre class="timeline-data"></pre>
+    </article>
+  </template>
+
+  <template id="list-item-template">
+    <button class="list-item" type="button">
+      <span class="list-title"></span>
+      <span class="list-meta muted"></span>
+    </button>
+  </template>
+
+  <template id="paused-run-template">
+    <article class="paused-card">
+      <div class="paused-card-copy">
+        <strong class="paused-title"></strong>
+        <p class="paused-message"></p>
+        <span class="paused-meta muted"></span>
+      </div>
+      <div class="paused-card-actions">
+        <button class="secondary-button paused-view" type="button">View</button>
+        <button class="primary-button paused-approve" type="button">Approve</button>
+        <button class="danger-button paused-reject" type="button">Reject</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+{
+  "servers": [
+    {
+      "server_name": "ops-runbooks",
+      "enabled": true,
+      "transport": "mock",
+      "endpoint": "mock://ops-runbooks",
+      "tools": [
+        {
+          "name": "lookup_runbook",
+          "description": "Look up an operations runbook by service name.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              }
+            },
+            "required": ["service"]
+          },
+          "mock_result_template": "Runbook for {service}: restart the service, inspect logs, then verify the health endpoint.",
+          "risk_level": "low",
+          "approval_required": false,
+          "timeout_seconds": 10
+        },
+        {
+          "name": "page_oncall",
+          "description": "Page the on-call engineer for an incident.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              }
+            },
+            "required": ["service", "severity"]
+          },
+          "mock_result_template": "Mock page created for {service} with severity {severity}.",
+          "risk_level": "high",
+          "approval_required": true,
+          "timeout_seconds": 15
+        }
+      ]
+    },
+    {
+      "server_name": "live-http-example",
+      "enabled": false,
+      "transport": "http",
+      "endpoint": "http://127.0.0.1:9000/mcp",
+      "headers": {},
+      "initialize": true,
+      "discover_tools": true,
+      "protocol_version": "2024-11-05",
+      "client_name": "multi-tool-agent",
+      "client_version": "0.1.0",
+      "tools": []
+    }
+  ]
+}

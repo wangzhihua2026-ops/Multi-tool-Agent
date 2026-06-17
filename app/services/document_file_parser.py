@@ -23,6 +23,15 @@ class ParsedDocumentFile:
     metadata: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class PdfExtractionResult:
+    content: str
+    parser: str
+    page_count: int
+    table_count: int
+    warnings: list[str] = field(default_factory=list)
+
+
 TEXT_EXTENSIONS = {
     ".txt",
     ".text",
@@ -101,13 +110,31 @@ def parse_document_file(
         )
 
     if extension == ".pdf" or normalized_type in PDF_CONTENT_TYPES:
+        pdf_result = _extract_pdf_with_pdfplumber(file_bytes, max_pdf_pages=max_pdf_pages)
+        if pdf_result is not None and pdf_result.content:
+            return ParsedDocumentFile(
+                content=_ensure_extracted_text_size(pdf_result.content, max_extracted_chars),
+                parser=pdf_result.parser,
+                metadata=_parser_metadata(
+                    page_count=pdf_result.page_count,
+                    table_count=pdf_result.table_count,
+                    parse_warnings=pdf_result.warnings,
+                    structured_blocks_count=max(1, pdf_result.page_count + pdf_result.table_count),
+                ),
+            )
+
+        fallback_content = _extract_pdf_text(file_bytes, max_pdf_pages=max_pdf_pages)
         return ParsedDocumentFile(
-            content=_ensure_extracted_text_size(
-                _extract_pdf_text(file_bytes, max_pdf_pages=max_pdf_pages),
-                max_extracted_chars,
-            ),
+            content=_ensure_extracted_text_size(fallback_content, max_extracted_chars),
             parser="pdf",
-            metadata=_parser_metadata(),
+            metadata=_parser_metadata(
+                page_count=(
+                    pdf_result.page_count
+                    if pdf_result is not None
+                    else _estimate_basic_pdf_page_count(file_bytes)
+                ),
+                parse_warnings=pdf_result.warnings if pdf_result is not None else [],
+            ),
         )
 
     if _is_text_file(extension, normalized_type):
@@ -205,6 +232,101 @@ def _extract_word_xml_paragraphs(xml_bytes: bytes) -> list[str]:
         if text:
             paragraphs.append(text)
     return paragraphs
+
+
+def _extract_pdf_with_pdfplumber(file_bytes: bytes, max_pdf_pages: int) -> PdfExtractionResult | None:
+    pdfplumber = _load_pdfplumber()
+    if pdfplumber is None:
+        return None
+
+    warnings: list[str] = []
+    text_blocks: list[str] = []
+    table_count = 0
+    try:
+        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+            page_count = len(pdf.pages)
+            if page_count > max_pdf_pages:
+                raise DocumentFileParseError(
+                    f"The PDF has {page_count} pages, which exceeds the configured limit of {max_pdf_pages} pages."
+                )
+            for page_index, page in enumerate(pdf.pages, start=1):
+                try:
+                    page_text = (page.extract_text() or "").strip()
+                except Exception as exc:
+                    warnings.append(f"pdfplumber text extraction failed on page {page_index}: {exc}")
+                    page_text = ""
+                if page_text:
+                    text_blocks.append(f"[Page {page_index}]\n{page_text}")
+                try:
+                    page_tables = page.extract_tables() or []
+                except Exception as exc:
+                    warnings.append(f"pdfplumber table extraction failed on page {page_index}: {exc}")
+                    page_tables = []
+                for table in page_tables:
+                    table_block = _serialize_pdf_table(
+                        table,
+                        page_number=page_index,
+                        table_index=table_count + 1,
+                    )
+                    if table_block:
+                        table_count += 1
+                        text_blocks.append(table_block)
+    except DocumentFileParseError:
+        raise
+    except Exception as exc:
+        warnings.append(f"pdfplumber extraction failed: {exc}")
+        return PdfExtractionResult(
+            content="",
+            parser="pdfplumber",
+            page_count=0,
+            table_count=0,
+            warnings=warnings,
+        )
+
+    return PdfExtractionResult(
+        content="\n\n".join(block for block in text_blocks if block).strip(),
+        parser="pdfplumber",
+        page_count=page_count,
+        table_count=table_count,
+        warnings=warnings,
+    )
+
+
+def _load_pdfplumber():
+    try:
+        import pdfplumber  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return pdfplumber
+
+
+def _serialize_pdf_table(table: list[list[str | None]], page_number: int, table_index: int) -> str:
+    rows = [
+        [_serialize_pdf_table_cell(cell) for cell in row]
+        for row in table
+        if row and any(cell is not None and str(cell).strip() for cell in row)
+    ]
+    if not rows:
+        return ""
+
+    width = max(len(row) for row in rows)
+    normalized_rows = [row + [""] * (width - len(row)) for row in rows]
+    header = normalized_rows[0]
+    body = normalized_rows[1:]
+    lines = [
+        f"[Page {page_number} Table {table_index}]",
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join("---" for _ in range(width)) + " |",
+    ]
+    for row in body:
+        lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(lines)
+
+
+def _serialize_pdf_table_cell(cell: str | None) -> str:
+    if cell is None:
+        return ""
+    return str(cell).replace("\n", " ").strip().replace("|", "\\|")
 
 
 def _extract_pdf_text(file_bytes: bytes, max_pdf_pages: int) -> str:

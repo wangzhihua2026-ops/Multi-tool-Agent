@@ -120,7 +120,10 @@ def test_document_file_upload_accepts_pdf_file() -> None:
     assert create_response.status_code == 200
     created = create_response.json()
     assert created["title"] == "pdf-import"
-    assert created["metadata"]["file_parser"] == "pdf"
+    assert created["metadata"]["file_parser"] in {"pdfplumber", "pdf"}
+    assert created["metadata"]["ocr_used"] == "false"
+    assert "page_count" in created["metadata"]
+    assert "table_count" in created["metadata"]
 
     detail_response = client.get(f"/api/documents/{created['document_id']}")
     assert detail_response.status_code == 200

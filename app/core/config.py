@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     document_upload_max_bytes: int = 20 * 1024 * 1024
     document_upload_max_extracted_chars: int = 2_000_000
     document_pdf_max_pages: int = 300
+    document_ocr_enabled: bool = True
+    document_ocr_max_pages: int = 50
+    document_ocr_min_native_chars: int = 50
     extraction_export_path: str = "./data/exports"
     llm_api_key: str | None = None
     openai_api_key: str | None = None

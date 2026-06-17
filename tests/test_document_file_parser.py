@@ -1,8 +1,15 @@
 import base64
 from dataclasses import dataclass
 
+import pytest
+
 from app.rag.models import DocumentFileUploadRequest
-from app.services.document_file_parser import build_document_request_from_file_upload, parse_document_file
+from app.services.ocr import MissingOcrDependencyError, OcrResult
+from app.services.document_file_parser import (
+    DocumentFileParseError,
+    build_document_request_from_file_upload,
+    parse_document_file,
+)
 
 
 def test_text_parser_returns_structured_metadata() -> None:
@@ -259,3 +266,81 @@ def test_pdf_parser_keeps_table_when_text_extraction_fails(monkeypatch) -> None:
     assert "| Metric | Value |" in parsed.content
     assert parsed.metadata["table_count"] == "1"
     assert "text extraction failed on page 1: text extraction exploded" in parsed.metadata["parse_warnings"]
+
+
+class _FakeOcrEngine:
+    def __init__(self, text: str = "Image OCR policy text.") -> None:
+        self.text = text
+        self.calls: list[bytes] = []
+
+    def extract_text_from_image(self, image_bytes: bytes) -> OcrResult:
+        self.calls.append(image_bytes)
+        return OcrResult(lines=[self.text], warnings=[])
+
+
+def test_image_upload_uses_ocr_engine() -> None:
+    engine = _FakeOcrEngine()
+
+    parsed = parse_document_file(
+        file_name="scan.png",
+        content_type="image/png",
+        file_bytes=b"fake-image-bytes",
+        ocr_engine=engine,
+    )
+
+    assert parsed.content == "Image OCR policy text."
+    assert parsed.parser == "ocr"
+    assert parsed.metadata["ocr_used"] == "true"
+    assert parsed.metadata["page_count"] == "1"
+    assert parsed.metadata["table_count"] == "0"
+    assert engine.calls == [b"fake-image-bytes"]
+
+
+def test_image_extension_takes_precedence_over_text_mime_type() -> None:
+    engine = _FakeOcrEngine("OCR text beats decoded bytes.")
+
+    parsed = parse_document_file(
+        file_name="scan.png",
+        content_type="text/plain",
+        file_bytes=b"plain text that should not be used",
+        ocr_engine=engine,
+    )
+
+    assert parsed.content == "OCR text beats decoded bytes."
+    assert parsed.parser == "ocr"
+    assert engine.calls == [b"plain text that should not be used"]
+
+
+def test_image_upload_reports_missing_ocr_dependency() -> None:
+    class _MissingEngine:
+        def extract_text_from_image(self, image_bytes: bytes) -> OcrResult:
+            raise MissingOcrDependencyError("paddleocr")
+
+    with pytest.raises(DocumentFileParseError, match="OCR support is not installed"):
+        parse_document_file(
+            file_name="scan.png",
+            content_type="image/png",
+            file_bytes=b"fake-image-bytes",
+            ocr_engine=_MissingEngine(),
+        )
+
+
+def test_image_upload_rejects_disabled_ocr() -> None:
+    with pytest.raises(DocumentFileParseError, match="OCR support is disabled"):
+        parse_document_file(
+            file_name="scan.png",
+            content_type="image/png",
+            file_bytes=b"fake-image-bytes",
+            ocr_enabled=False,
+            ocr_engine=_FakeOcrEngine(),
+        )
+
+
+def test_image_upload_rejects_empty_ocr_text() -> None:
+    with pytest.raises(DocumentFileParseError, match="OCR did not find readable text"):
+        parse_document_file(
+            file_name="scan.png",
+            content_type="image/png",
+            file_bytes=b"fake-image-bytes",
+            ocr_engine=_FakeOcrEngine("   "),
+        )

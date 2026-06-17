@@ -10,6 +10,7 @@ from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
 from app.rag.models import DocumentCreateRequest, DocumentFileUploadRequest
+from app.services.ocr import MissingOcrDependencyError, OcrEngine, get_default_ocr_engine
 
 
 class DocumentFileParseError(Exception):
@@ -59,6 +60,14 @@ PDF_CONTENT_TYPES = {"application/pdf"}
 DOCX_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
+IMAGE_CONTENT_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/bmp",
+    "image/tiff",
+}
 
 
 def build_document_request_from_file_upload(
@@ -66,6 +75,10 @@ def build_document_request_from_file_upload(
     max_file_bytes: int = 20 * 1024 * 1024,
     max_extracted_chars: int = 2_000_000,
     max_pdf_pages: int = 300,
+    ocr_enabled: bool = True,
+    ocr_max_pages: int = 50,
+    ocr_min_native_chars: int = 50,
+    ocr_engine: OcrEngine | None = None,
 ) -> DocumentCreateRequest:
     file_bytes = _decode_base64(request.content_base64, max_file_bytes=max_file_bytes)
     file_name = _clean_file_name(request.file_name)
@@ -75,6 +88,10 @@ def build_document_request_from_file_upload(
         file_bytes=file_bytes,
         max_extracted_chars=max_extracted_chars,
         max_pdf_pages=max_pdf_pages,
+        ocr_enabled=ocr_enabled,
+        ocr_max_pages=ocr_max_pages,
+        ocr_min_native_chars=ocr_min_native_chars,
+        ocr_engine=ocr_engine,
     )
     title = _clean_title(request.title) or _title_from_file_name(file_name)
     metadata = _stringify_metadata(request.metadata)
@@ -98,6 +115,10 @@ def parse_document_file(
     file_bytes: bytes,
     max_extracted_chars: int = 2_000_000,
     max_pdf_pages: int = 300,
+    ocr_enabled: bool = True,
+    ocr_max_pages: int = 50,
+    ocr_min_native_chars: int = 50,
+    ocr_engine: OcrEngine | None = None,
 ) -> ParsedDocumentFile:
     extension = _extension(file_name)
     normalized_type = (content_type or "").split(";")[0].strip().lower()
@@ -137,6 +158,18 @@ def parse_document_file(
             ),
         )
 
+    if _is_image_file(extension, normalized_type):
+        content = _extract_image_text_with_ocr(
+            file_bytes=file_bytes,
+            ocr_enabled=ocr_enabled,
+            ocr_engine=ocr_engine,
+        )
+        return ParsedDocumentFile(
+            content=_ensure_extracted_text_size(content, max_extracted_chars),
+            parser="ocr",
+            metadata=_parser_metadata(ocr_used=True, page_count=1),
+        )
+
     if _is_text_file(extension, normalized_type):
         return ParsedDocumentFile(
             content=_ensure_extracted_text_size(_decode_text_file(file_bytes), max_extracted_chars),
@@ -145,7 +178,7 @@ def parse_document_file(
         )
 
     raise DocumentFileParseError(
-        "Unsupported file type. Upload TXT, Markdown, CSV, JSON, HTML, XML, PDF, or DOCX files."
+        "Unsupported file type. Upload TXT, Markdown, CSV, JSON, HTML, XML, PDF, DOCX, or image files."
     )
 
 
@@ -168,6 +201,29 @@ def _decode_base64(value: str, max_file_bytes: int) -> bytes:
 
 def _is_text_file(extension: str, content_type: str) -> bool:
     return extension in TEXT_EXTENSIONS or content_type.startswith("text/") or content_type in TEXT_CONTENT_TYPES
+
+
+def _is_image_file(extension: str, content_type: str) -> bool:
+    return extension in IMAGE_EXTENSIONS or content_type in IMAGE_CONTENT_TYPES
+
+
+def _extract_image_text_with_ocr(
+    *,
+    file_bytes: bytes,
+    ocr_enabled: bool,
+    ocr_engine: OcrEngine | None,
+) -> str:
+    if not ocr_enabled:
+        raise DocumentFileParseError("OCR support is disabled for this server.")
+    engine = ocr_engine or get_default_ocr_engine()
+    try:
+        result = engine.extract_text_from_image(file_bytes)
+    except MissingOcrDependencyError as exc:
+        raise DocumentFileParseError(str(exc)) from exc
+    content = result.text.strip()
+    if not content:
+        raise DocumentFileParseError("OCR did not find readable text in the uploaded image.")
+    return content
 
 
 def _decode_text_file(file_bytes: bytes) -> str:

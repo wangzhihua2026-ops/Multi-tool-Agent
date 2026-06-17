@@ -2,6 +2,7 @@ import base64
 import binascii
 import re
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import PurePosixPath
@@ -11,6 +12,7 @@ from zipfile import BadZipFile, ZipFile
 
 from app.rag.models import DocumentCreateRequest, DocumentFileUploadRequest
 from app.services.ocr import MissingOcrDependencyError, OcrEngine, get_default_ocr_engine
+from app.services.pdf_rendering import render_pdf_pages_to_png_bytes
 
 
 class DocumentFileParseError(Exception):
@@ -30,6 +32,13 @@ class PdfExtractionResult:
     parser: str
     page_count: int
     table_count: int
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PdfOcrExtractionResult:
+    content: str
+    page_count: int
     warnings: list[str] = field(default_factory=list)
 
 
@@ -79,6 +88,7 @@ def build_document_request_from_file_upload(
     ocr_max_pages: int = 50,
     ocr_min_native_chars: int = 50,
     ocr_engine: OcrEngine | None = None,
+    pdf_page_renderer: Callable[[bytes, int], list[bytes]] | None = None,
 ) -> DocumentCreateRequest:
     file_bytes = _decode_base64(request.content_base64, max_file_bytes=max_file_bytes)
     file_name = _clean_file_name(request.file_name)
@@ -92,6 +102,7 @@ def build_document_request_from_file_upload(
         ocr_max_pages=ocr_max_pages,
         ocr_min_native_chars=ocr_min_native_chars,
         ocr_engine=ocr_engine,
+        pdf_page_renderer=pdf_page_renderer,
     )
     title = _clean_title(request.title) or _title_from_file_name(file_name)
     metadata = _stringify_metadata(request.metadata)
@@ -119,6 +130,7 @@ def parse_document_file(
     ocr_max_pages: int = 50,
     ocr_min_native_chars: int = 50,
     ocr_engine: OcrEngine | None = None,
+    pdf_page_renderer: Callable[[bytes, int], list[bytes]] | None = None,
 ) -> ParsedDocumentFile:
     extension = _extension(file_name)
     normalized_type = (content_type or "").split(";")[0].strip().lower()
@@ -132,6 +144,40 @@ def parse_document_file(
 
     if extension == ".pdf" or normalized_type in PDF_CONTENT_TYPES:
         pdf_result = _extract_pdf_with_pdfplumber(file_bytes, max_pdf_pages=max_pdf_pages)
+        ocr_warnings: list[str] = []
+        if pdf_result is not None and len(pdf_result.content.strip()) < ocr_min_native_chars:
+            try:
+                ocr_result = _extract_pdf_text_with_ocr(
+                    file_bytes=file_bytes,
+                    ocr_enabled=ocr_enabled,
+                    ocr_max_pages=ocr_max_pages,
+                    ocr_engine=ocr_engine,
+                    pdf_page_renderer=pdf_page_renderer,
+                )
+            except DocumentFileParseError as exc:
+                if not pdf_result.content.strip():
+                    raise
+                ocr_warnings.append(str(exc))
+            else:
+                if ocr_result.content:
+                    content_blocks = [ocr_result.content]
+                    if pdf_result.content.strip():
+                        content_blocks.insert(0, pdf_result.content.strip())
+                    content = "\n\n".join(content_blocks)
+                    return ParsedDocumentFile(
+                        content=_ensure_extracted_text_size(content, max_extracted_chars),
+                        parser="pdfplumber+ocr",
+                        metadata=_parser_metadata(
+                            ocr_used=True,
+                            page_count=ocr_result.page_count,
+                            table_count=pdf_result.table_count,
+                            parse_warnings=pdf_result.warnings + ocr_result.warnings,
+                            structured_blocks_count=max(1, ocr_result.page_count + pdf_result.table_count),
+                        ),
+                    )
+                ocr_warnings.extend(ocr_result.warnings)
+                if not pdf_result.content.strip():
+                    ocr_warnings.append("OCR did not find readable text in the PDF.")
         if pdf_result is not None and pdf_result.content:
             return ParsedDocumentFile(
                 content=_ensure_extracted_text_size(pdf_result.content, max_extracted_chars),
@@ -139,7 +185,7 @@ def parse_document_file(
                 metadata=_parser_metadata(
                     page_count=pdf_result.page_count,
                     table_count=pdf_result.table_count,
-                    parse_warnings=pdf_result.warnings,
+                    parse_warnings=pdf_result.warnings + ocr_warnings,
                     structured_blocks_count=max(1, pdf_result.page_count + pdf_result.table_count),
                 ),
             )
@@ -215,7 +261,13 @@ def _extract_image_text_with_ocr(
 ) -> str:
     if not ocr_enabled:
         raise DocumentFileParseError("OCR support is disabled for this server.")
-    engine = ocr_engine or get_default_ocr_engine()
+    if ocr_engine is not None:
+        engine = ocr_engine
+    else:
+        try:
+            engine = get_default_ocr_engine()
+        except MissingOcrDependencyError as exc:
+            raise DocumentFileParseError(str(exc)) from exc
     try:
         result = engine.extract_text_from_image(file_bytes)
     except MissingOcrDependencyError as exc:
@@ -224,6 +276,56 @@ def _extract_image_text_with_ocr(
     if not content:
         raise DocumentFileParseError("OCR did not find readable text in the uploaded image.")
     return content
+
+
+def _extract_pdf_text_with_ocr(
+    *,
+    file_bytes: bytes,
+    ocr_enabled: bool,
+    ocr_max_pages: int,
+    ocr_engine: OcrEngine | None,
+    pdf_page_renderer: Callable[[bytes, int], list[bytes]] | None,
+) -> PdfOcrExtractionResult:
+    if not ocr_enabled:
+        raise DocumentFileParseError("The PDF did not contain extractable text and OCR support is disabled.")
+    renderer = pdf_page_renderer or render_pdf_pages_to_png_bytes
+    try:
+        page_images = renderer(file_bytes, ocr_max_pages)
+    except MissingOcrDependencyError as exc:
+        raise DocumentFileParseError(str(exc)) from exc
+    except ValueError as exc:
+        raise DocumentFileParseError(f"OCR page limit exceeded. {exc}") from exc
+    except Exception as exc:
+        raise DocumentFileParseError(f"PDF OCR rendering failed: {exc}") from exc
+
+    if len(page_images) > ocr_max_pages:
+        raise DocumentFileParseError(
+            f"OCR page limit exceeded. PDF OCR page limit is {ocr_max_pages}, got {len(page_images)} rendered pages."
+        )
+
+    if ocr_engine is not None:
+        engine = ocr_engine
+    else:
+        try:
+            engine = get_default_ocr_engine()
+        except MissingOcrDependencyError as exc:
+            raise DocumentFileParseError(str(exc)) from exc
+    blocks: list[str] = []
+    warnings: list[str] = []
+    for page_index, image_bytes in enumerate(page_images, start=1):
+        try:
+            result = engine.extract_text_from_image(image_bytes)
+        except MissingOcrDependencyError as exc:
+            raise DocumentFileParseError(str(exc)) from exc
+        warnings.extend(result.warnings)
+        if result.text:
+            blocks.append(f"[Page {page_index} OCR]\n{result.text}")
+
+    return PdfOcrExtractionResult(
+        content="\n\n".join(blocks).strip(),
+        page_count=len(page_images),
+        warnings=warnings,
+    )
 
 
 def _decode_text_file(file_bytes: bytes) -> str:

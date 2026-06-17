@@ -2,7 +2,7 @@ import base64
 import binascii
 import re
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Any
@@ -20,6 +20,7 @@ class DocumentFileParseError(Exception):
 class ParsedDocumentFile:
     content: str
     parser: str
+    metadata: dict[str, str] = field(default_factory=dict)
 
 
 TEXT_EXTENSIONS = {
@@ -69,6 +70,7 @@ def build_document_request_from_file_upload(
     title = _clean_title(request.title) or _title_from_file_name(file_name)
     metadata = _stringify_metadata(request.metadata)
     metadata.setdefault("source", "file_upload")
+    metadata.update(parsed.metadata)
     metadata["file_name"] = file_name
     metadata["file_type"] = request.content_type or _extension(file_name).lstrip(".") or "unknown"
     metadata["file_size"] = str(len(file_bytes))
@@ -95,6 +97,7 @@ def parse_document_file(
         return ParsedDocumentFile(
             content=_ensure_extracted_text_size(_extract_docx_text(file_bytes), max_extracted_chars),
             parser="docx",
+            metadata=_parser_metadata(),
         )
 
     if extension == ".pdf" or normalized_type in PDF_CONTENT_TYPES:
@@ -104,12 +107,14 @@ def parse_document_file(
                 max_extracted_chars,
             ),
             parser="pdf",
+            metadata=_parser_metadata(),
         )
 
     if _is_text_file(extension, normalized_type):
         return ParsedDocumentFile(
             content=_ensure_extracted_text_size(_decode_text_file(file_bytes), max_extracted_chars),
             parser="text",
+            metadata=_parser_metadata(),
         )
 
     raise DocumentFileParseError(
@@ -374,6 +379,24 @@ def _stringify_metadata(metadata: dict[str, Any]) -> dict[str, str]:
         else:
             result[key] = str(value)
     return result
+
+
+def _parser_metadata(
+    *,
+    ocr_used: bool = False,
+    page_count: int = 0,
+    table_count: int = 0,
+    parse_warnings: list[str] | None = None,
+    structured_blocks_count: int = 1,
+) -> dict[str, str]:
+    warnings = parse_warnings or []
+    return {
+        "ocr_used": str(ocr_used).lower(),
+        "page_count": str(page_count),
+        "table_count": str(table_count),
+        "parse_warnings": "; ".join(warning for warning in warnings if warning),
+        "structured_blocks_count": str(structured_blocks_count),
+    }
 
 
 def _tag_is(tag: str, local_name: str) -> bool:

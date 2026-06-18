@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_knowledge_store, get_reindex_job_service, get_vector_store
 from app.api.server import app
 from app.core.config import get_settings
+from app.services.ocr import OcrResult
 
 
 client = TestClient(app)
@@ -128,6 +129,60 @@ def test_document_file_upload_accepts_pdf_file() -> None:
     detail_response = client.get(f"/api/documents/{created['document_id']}")
     assert detail_response.status_code == 200
     assert "searchable vector knowledge" in detail_response.json()["content"]
+
+
+def test_document_file_upload_accepts_image_file_with_mocked_ocr(monkeypatch) -> None:
+    class FakeOcrEngine:
+        def extract_text_from_image(self, image_bytes: bytes) -> OcrResult:
+            return OcrResult(lines=["Image upload OCR text is searchable."], warnings=[])
+
+    get_knowledge_store().clear()
+    get_vector_store().clear()
+    monkeypatch.setattr(
+        "app.services.document_file_parser.get_default_ocr_engine",
+        lambda: FakeOcrEngine(),
+    )
+
+    create_response = client.post(
+        "/api/documents/upload",
+        json={
+            "file_name": "scan.png",
+            "content_type": "image/png",
+            "content_base64": _as_base64(b"fake-png-bytes"),
+        },
+    )
+
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["title"] == "scan"
+    assert created["metadata"]["file_parser"] == "ocr"
+    assert created["metadata"]["ocr_used"] == "true"
+    assert created["metadata"]["page_count"] == "1"
+
+    search_response = client.get("/api/documents/search", params={"query": "OCR text"})
+    assert search_response.status_code == 200
+    assert search_response.json()[0]["document_title"] == "scan"
+
+
+def test_document_file_upload_respects_disabled_ocr_setting(monkeypatch) -> None:
+    monkeypatch.setenv("DOCUMENT_OCR_ENABLED", "false")
+    get_settings.cache_clear()
+    get_knowledge_store().clear()
+    get_vector_store().clear()
+    try:
+        create_response = client.post(
+            "/api/documents/upload",
+            json={
+                "file_name": "scan.png",
+                "content_type": "image/png",
+                "content_base64": _as_base64(b"fake-image-bytes"),
+            },
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert create_response.status_code == 400
+    assert "OCR support is disabled" in create_response.json()["detail"]
 
 
 def test_document_file_upload_rejects_unsupported_file() -> None:

@@ -27,5 +27,12 @@ def test_web_app_shell_is_served() -> None:
     assert 'id="document-file"' in response.text
     assert 'id="document-upload-panel"' in response.text
     assert "Add or Update Knowledge" in response.text
-    assert "PDF, or DOCX" in response.text
+    assert "PDF, DOCX, or image files" in response.text
     assert "./app.js" in response.text
+
+
+def test_web_app_javascript_allows_image_uploads() -> None:
+    response = client.get("/app/app.js")
+    assert response.status_code == 200
+    assert '".png"' in response.text
+    assert '"image/png"' in response.text

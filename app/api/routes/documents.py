@@ -38,6 +38,9 @@ async def upload_document_file(
             max_file_bytes=settings.document_upload_max_bytes,
             max_extracted_chars=settings.document_upload_max_extracted_chars,
             max_pdf_pages=settings.document_pdf_max_pages,
+            ocr_enabled=settings.document_ocr_enabled,
+            ocr_max_pages=settings.document_ocr_max_pages,
+            ocr_min_native_chars=settings.document_ocr_min_native_chars,
         )
     except DocumentFileParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -23,6 +23,13 @@ const SUPPORTED_DOCUMENT_EXTENSIONS = new Set([
   ".log",
   ".pdf",
   ".docx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".bmp",
+  ".tif",
+  ".tiff",
 ]);
 const SUPPORTED_DOCUMENT_MIME_TYPES = new Set([
   "application/json",
@@ -33,6 +40,11 @@ const SUPPORTED_DOCUMENT_MIME_TYPES = new Set([
   "application/x-ndjson",
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/bmp",
+  "image/tiff",
 ]);
 
 const elements = {
@@ -223,7 +235,7 @@ async function buildDocumentUploadRequest() {
 
   if (file) {
     if (!isSupportedDocumentFile(file)) {
-      throw new Error("Upload a TXT, Markdown, CSV, JSON, HTML, XML, PDF, or DOCX file.");
+      throw new Error("Upload a TXT, Markdown, CSV, JSON, HTML, XML, PDF, DOCX, or image file.");
     }
     return {
       path: "/documents/upload",
@@ -281,7 +293,7 @@ async function readFileAsBase64(file) {
 }
 
 function resetDocumentFileStatus() {
-  elements.documentFileStatus.textContent = "Choose a TXT, Markdown, CSV, JSON, HTML, XML, PDF, or DOCX file.";
+  elements.documentFileStatus.textContent = "Choose TXT, Markdown, CSV, JSON, HTML, XML, PDF, DOCX, or image files.";
 }
 
 function fileExtension(fileName) {

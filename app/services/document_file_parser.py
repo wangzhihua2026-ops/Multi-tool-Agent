@@ -503,7 +503,7 @@ def _extract_pdf_text(file_bytes: bytes, max_pdf_pages: int) -> str:
         return fallback_text
 
     raise DocumentFileParseError(
-        "The PDF file did not contain extractable text. Scanned PDFs need OCR before upload."
+        "The PDF file did not contain extractable text and OCR support is unavailable."
     )
 
 

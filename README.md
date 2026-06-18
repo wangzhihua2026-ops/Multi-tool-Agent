@@ -109,6 +109,24 @@ The current recommended local model is `intfloat/multilingual-e5-small`, which i
 On Windows, this mode also depends on a working local PyTorch runtime. If PyTorch or its native DLL dependencies are missing, keep `EMBEDDING_PROVIDER=hash` until the runtime is fixed.
 When fallback is enabled, stored chunks are labeled with the actual embedding signature that produced the vector, so future searches can ignore incompatible vector scores.
 
+## OCR document parsing
+
+PDF parsing uses `pdfplumber` for native text and table extraction. OCR for scanned PDFs and image uploads is optional because PaddleOCR and PaddlePaddle are heavier dependencies.
+
+Install OCR support with:
+
+```bash
+pip install -e .[ocr]
+```
+
+OCR-related settings:
+
+- `DOCUMENT_OCR_ENABLED=true`
+- `DOCUMENT_OCR_MAX_PAGES=50`
+- `DOCUMENT_OCR_MIN_NATIVE_CHARS=50`
+
+If OCR dependencies are not installed, image uploads and scanned PDFs return a clear parsing error instead of silently indexing empty text.
+
 For this workspace, the validated path is a separate Python 3.12 environment:
 
 ```bash
@@ -179,14 +197,14 @@ The runtime can execute up to `MAX_TOOL_STEPS` tool-planning rounds before produ
 
 The built-in web application is served from `/app/` and groups the current local workflow into three panes:
 
-- `Documents`: upload pasted text or local TXT/Markdown/CSV/JSON/HTML/XML/PDF/DOCX files, inspect stored content, run search, and reindex embeddings
+- `Documents`: upload pasted text or local TXT/Markdown/CSV/JSON/HTML/XML/PDF/DOCX/image files, inspect stored content, run search, and reindex embeddings. PDF uploads use `pdfplumber` for native text and table extraction when available; scanned PDFs and images can use the optional OCR extra.
 - `Agent Chat`: send messages to the agent, follow the user-facing transcript, and keep technical SSE details folded into an advanced panel
 - `Paused Actions`: handle only the high-risk runs that paused for confirmation, while runs, payloads, and tool inventory stay in an advanced foldout
 
 ## Document ingestion endpoints
 
 - `POST /api/documents` stores a document in the configured knowledge store
-- `POST /api/documents/upload` stores a base64-encoded text, PDF, or DOCX file after extracting text
+- `POST /api/documents/upload` stores a base64-encoded text, PDF, DOCX, or image file after extracting text
 - `POST /api/documents/reindex` starts a background reindex job and returns a `job_id`
 - `GET /api/documents/reindex/{job_id}` returns the reindex job status and final summary
 - `GET /api/documents` lists stored documents

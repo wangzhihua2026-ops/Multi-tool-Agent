@@ -329,6 +329,57 @@ def test_pdf_fallback_preserves_pdfplumber_page_count(monkeypatch) -> None:
     assert parsed.metadata["page_count"] == "2"
 
 
+def test_pdfplumber_total_failure_uses_legacy_pdf_fallback_when_ocr_disabled(monkeypatch) -> None:
+    from app.services import document_file_parser
+
+    class _BrokenPdfPlumber:
+        @staticmethod
+        def open(file_object):
+            raise RuntimeError("pdfplumber exploded")
+
+    monkeypatch.setattr(document_file_parser, "_load_pdfplumber", lambda: _BrokenPdfPlumber)
+    monkeypatch.setattr(document_file_parser, "_extract_pdf_text", lambda file_bytes, max_pdf_pages: "Legacy text.")
+
+    parsed = parse_document_file(
+        file_name="legacy.pdf",
+        content_type="application/pdf",
+        file_bytes=b"%PDF legacy",
+        ocr_enabled=False,
+    )
+
+    assert parsed.content == "Legacy text."
+    assert parsed.parser == "pdf"
+    assert "pdfplumber extraction failed: pdfplumber exploded" in parsed.metadata["parse_warnings"]
+
+
+def test_pdfplumber_total_failure_can_still_use_ocr_when_legacy_fallback_has_no_text(monkeypatch) -> None:
+    from app.services import document_file_parser
+
+    class _BrokenPdfPlumber:
+        @staticmethod
+        def open(file_object):
+            raise RuntimeError("pdfplumber exploded")
+
+    def _raise_legacy_failure(file_bytes: bytes, max_pdf_pages: int) -> str:
+        raise DocumentFileParseError("legacy fallback had no text")
+
+    engine = _FakeOcrEngine("OCR text after parser failures.")
+    monkeypatch.setattr(document_file_parser, "_load_pdfplumber", lambda: _BrokenPdfPlumber)
+    monkeypatch.setattr(document_file_parser, "_extract_pdf_text", _raise_legacy_failure)
+
+    parsed = parse_document_file(
+        file_name="scan.pdf",
+        content_type="application/pdf",
+        file_bytes=b"%PDF scan",
+        ocr_engine=engine,
+        pdf_page_renderer=lambda file_bytes, max_pages: [b"page-one-image"],
+    )
+
+    assert parsed.parser == "pdfplumber+ocr"
+    assert parsed.content == "[Page 1 OCR]\nOCR text after parser failures."
+    assert "pdfplumber extraction failed: pdfplumber exploded" in parsed.metadata["parse_warnings"]
+
+
 def test_pdf_parser_keeps_page_text_when_table_extraction_fails(monkeypatch) -> None:
     from app.services import document_file_parser
 
@@ -539,6 +590,30 @@ def test_scanned_pdf_wraps_renderer_failure(monkeypatch) -> None:
         )
 
 
+def test_scanned_pdf_wraps_ocr_runtime_failure(monkeypatch) -> None:
+    from app.services import document_file_parser
+
+    class _EmptyPdfPlumber:
+        @staticmethod
+        def open(file_object):
+            return _FakePdf([_FakePdfPage(text="", tables=[])])
+
+    class _BrokenEngine:
+        def extract_text_from_image(self, image_bytes: bytes) -> OcrResult:
+            raise ValueError("ocr exploded")
+
+    monkeypatch.setattr(document_file_parser, "_load_pdfplumber", lambda: _EmptyPdfPlumber)
+
+    with pytest.raises(DocumentFileParseError, match="PDF OCR failed on page 1.*ocr exploded"):
+        parse_document_file(
+            file_name="scan.pdf",
+            content_type="application/pdf",
+            file_bytes=b"%PDF scanned",
+            ocr_engine=_BrokenEngine(),
+            pdf_page_renderer=lambda file_bytes, max_pages: [b"page-one-image"],
+        )
+
+
 def test_image_upload_reports_missing_ocr_dependency() -> None:
     class _MissingEngine:
         def extract_text_from_image(self, image_bytes: bytes) -> OcrResult:
@@ -550,6 +625,20 @@ def test_image_upload_reports_missing_ocr_dependency() -> None:
             content_type="image/png",
             file_bytes=b"fake-image-bytes",
             ocr_engine=_MissingEngine(),
+        )
+
+
+def test_image_upload_wraps_ocr_runtime_failure() -> None:
+    class _BrokenEngine:
+        def extract_text_from_image(self, image_bytes: bytes) -> OcrResult:
+            raise ValueError("decoder exploded")
+
+    with pytest.raises(DocumentFileParseError, match="Image OCR failed.*decoder exploded"):
+        parse_document_file(
+            file_name="scan.png",
+            content_type="image/png",
+            file_bytes=b"not-an-image",
+            ocr_engine=_BrokenEngine(),
         )
 
 

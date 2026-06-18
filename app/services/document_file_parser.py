@@ -145,6 +145,21 @@ def parse_document_file(
     if extension == ".pdf" or normalized_type in PDF_CONTENT_TYPES:
         pdf_result = _extract_pdf_with_pdfplumber(file_bytes, max_pdf_pages=max_pdf_pages)
         ocr_warnings: list[str] = []
+        fallback_error: DocumentFileParseError | None = None
+        if pdf_result is not None and not pdf_result.content.strip() and pdf_result.warnings:
+            try:
+                fallback_content = _extract_pdf_text(file_bytes, max_pdf_pages=max_pdf_pages)
+            except DocumentFileParseError as exc:
+                fallback_error = exc
+            else:
+                return ParsedDocumentFile(
+                    content=_ensure_extracted_text_size(fallback_content, max_extracted_chars),
+                    parser="pdf",
+                    metadata=_parser_metadata(
+                        page_count=pdf_result.page_count,
+                        parse_warnings=pdf_result.warnings,
+                    ),
+                )
         if pdf_result is not None and len(pdf_result.content.strip()) < ocr_min_native_chars:
             try:
                 ocr_result = _extract_pdf_text_with_ocr(
@@ -190,6 +205,8 @@ def parse_document_file(
                 ),
             )
 
+        if fallback_error is not None:
+            raise fallback_error
         fallback_content = _extract_pdf_text(file_bytes, max_pdf_pages=max_pdf_pages)
         return ParsedDocumentFile(
             content=_ensure_extracted_text_size(fallback_content, max_extracted_chars),
@@ -272,6 +289,8 @@ def _extract_image_text_with_ocr(
         result = engine.extract_text_from_image(file_bytes)
     except MissingOcrDependencyError as exc:
         raise DocumentFileParseError(str(exc)) from exc
+    except Exception as exc:
+        raise DocumentFileParseError(f"Image OCR failed: {exc}") from exc
     content = result.text.strip()
     if not content:
         raise DocumentFileParseError("OCR did not find readable text in the uploaded image.")
@@ -317,6 +336,8 @@ def _extract_pdf_text_with_ocr(
             result = engine.extract_text_from_image(image_bytes)
         except MissingOcrDependencyError as exc:
             raise DocumentFileParseError(str(exc)) from exc
+        except Exception as exc:
+            raise DocumentFileParseError(f"PDF OCR failed on page {page_index}: {exc}") from exc
         warnings.extend(result.warnings)
         if result.text:
             blocks.append(f"[Page {page_index} OCR]\n{result.text}")

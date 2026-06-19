@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.config import Settings
 from app.core.exceptions import DocumentNotFoundError
-from app.rag.models import ChunkRecord, DocumentRecord, DocumentSummary
+from app.rag.models import ChunkRecord, DocumentRecord, DocumentSummary, ParentBlockRecord
 from app.rag.store import InMemoryKnowledgeStore, KnowledgeStore
 
 logger = logging.getLogger(__name__)
@@ -36,10 +36,16 @@ class SqliteKnowledgeStore:
     def clear(self) -> None:
         with self._lock, self._connect() as connection:
             connection.execute("DELETE FROM knowledge_chunks")
+            connection.execute("DELETE FROM knowledge_parent_blocks")
             connection.execute("DELETE FROM knowledge_documents")
             connection.commit()
 
-    def add_document(self, document: DocumentRecord, chunks: list[ChunkRecord]) -> None:
+    def add_document(
+        self,
+        document: DocumentRecord,
+        chunks: list[ChunkRecord],
+        parent_blocks: list[ParentBlockRecord] | None = None,
+    ) -> None:
         with self._lock, self._connect() as connection:
             connection.execute(
                 """
@@ -61,11 +67,38 @@ class SqliteKnowledgeStore:
                 "DELETE FROM knowledge_chunks WHERE document_id = ?",
                 (document.document_id,),
             )
+            connection.execute(
+                "DELETE FROM knowledge_parent_blocks WHERE document_id = ?",
+                (document.document_id,),
+            )
+            connection.executemany(
+                """
+                INSERT INTO knowledge_parent_blocks (
+                    parent_id, document_id, document_title, parent_index, content, tokens_json,
+                    start_offset, end_offset, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        parent.parent_id,
+                        parent.document_id,
+                        parent.document_title,
+                        parent.index,
+                        parent.content,
+                        json.dumps(parent.tokens, ensure_ascii=False, default=str),
+                        parent.start_offset,
+                        parent.end_offset,
+                        json.dumps(parent.metadata, ensure_ascii=False, default=str),
+                    )
+                    for parent in parent_blocks or []
+                ],
+            )
             connection.executemany(
                 """
                 INSERT INTO knowledge_chunks (
-                    chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                    embedding_provider, parent_id, parent_index, start_offset, end_offset
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -76,6 +109,10 @@ class SqliteKnowledgeStore:
                         chunk.content,
                         json.dumps(chunk.tokens, ensure_ascii=False, default=str),
                         chunk.embedding_provider,
+                        chunk.parent_id,
+                        chunk.parent_index,
+                        chunk.start_offset,
+                        chunk.end_offset,
                     )
                     for chunk in chunks
                 ],
@@ -124,7 +161,8 @@ class SqliteKnowledgeStore:
 
             rows = connection.execute(
                 """
-                SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
+                SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                       embedding_provider, parent_id, parent_index, start_offset, end_offset
                 FROM knowledge_chunks
                 WHERE document_id = ?
                 ORDER BY chunk_index ASC, rowid ASC
@@ -138,7 +176,8 @@ class SqliteKnowledgeStore:
         with self._lock, self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
+                SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                       embedding_provider, parent_id, parent_index, start_offset, end_offset
                 FROM knowledge_chunks
                 ORDER BY document_id ASC, chunk_index ASC, rowid ASC
                 """
@@ -150,7 +189,8 @@ class SqliteKnowledgeStore:
         with self._lock, self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
+                SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                       embedding_provider, parent_id, parent_index, start_offset, end_offset
                 FROM knowledge_chunks
                 WHERE chunk_id = ?
                 """,
@@ -161,6 +201,69 @@ class SqliteKnowledgeStore:
             return None
 
         return self._row_to_chunk(row)
+
+    def get_parent_block(self, parent_id: str) -> ParentBlockRecord | None:
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT parent_id, document_id, document_title, parent_index, content, tokens_json,
+                       start_offset, end_offset, metadata_json
+                FROM knowledge_parent_blocks
+                WHERE parent_id = ?
+                """,
+                (parent_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_parent_block(row)
+
+    def get_parent_blocks(self, document_id: str | None = None) -> list[ParentBlockRecord]:
+        with self._lock, self._connect() as connection:
+            if document_id is not None:
+                document_exists = connection.execute(
+                    "SELECT document_id FROM knowledge_documents WHERE document_id = ?",
+                    (document_id,),
+                ).fetchone()
+                if document_exists is None:
+                    raise DocumentNotFoundError(document_id)
+                rows = connection.execute(
+                    """
+                    SELECT parent_id, document_id, document_title, parent_index, content, tokens_json,
+                           start_offset, end_offset, metadata_json
+                    FROM knowledge_parent_blocks
+                    WHERE document_id = ?
+                    ORDER BY parent_index ASC, rowid ASC
+                    """,
+                    (document_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT parent_id, document_id, document_title, parent_index, content, tokens_json,
+                           start_offset, end_offset, metadata_json
+                    FROM knowledge_parent_blocks
+                    ORDER BY document_id ASC, parent_index ASC, rowid ASC
+                    """
+                ).fetchall()
+
+        return [self._row_to_parent_block(row) for row in rows]
+
+    def get_child_chunks_for_parent(self, parent_id: str) -> list[ChunkRecord]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                       embedding_provider, parent_id, parent_index, start_offset, end_offset
+                FROM knowledge_chunks
+                WHERE parent_id = ?
+                ORDER BY chunk_index ASC, rowid ASC
+                """,
+                (parent_id,),
+            ).fetchall()
+
+        return [self._row_to_chunk(row) for row in rows]
 
     def set_chunk_embedding_provider(self, chunk_id: str, embedding_provider: str | None) -> None:
         with self._lock, self._connect() as connection:
@@ -222,6 +325,23 @@ class SqliteKnowledgeStore:
             content=row["content"],
             tokens=json.loads(row["tokens_json"] or "[]"),
             embedding_provider=row["embedding_provider"],
+            parent_id=row["parent_id"],
+            parent_index=row["parent_index"],
+            start_offset=row["start_offset"],
+            end_offset=row["end_offset"],
+        )
+
+    def _row_to_parent_block(self, row: sqlite3.Row) -> ParentBlockRecord:
+        return ParentBlockRecord(
+            parent_id=row["parent_id"],
+            document_id=row["document_id"],
+            document_title=row["document_title"],
+            index=int(row["parent_index"]),
+            content=row["content"],
+            tokens=json.loads(row["tokens_json"] or "[]"),
+            start_offset=row["start_offset"],
+            end_offset=row["end_offset"],
+            metadata=json.loads(row["metadata_json"] or "{}"),
         )
 
     def _connect(self) -> sqlite3.Connection:
@@ -259,6 +379,28 @@ class SqliteKnowledgeStore:
                     content TEXT NOT NULL,
                     tokens_json TEXT NOT NULL,
                     embedding_provider TEXT,
+                    parent_id TEXT,
+                    parent_index INTEGER,
+                    start_offset INTEGER,
+                    end_offset INTEGER,
+                    FOREIGN KEY(document_id) REFERENCES knowledge_documents(document_id) ON DELETE CASCADE
+                )
+                """
+            )
+            self._ensure_document_columns(connection)
+            self._ensure_chunk_columns(connection)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS knowledge_parent_blocks (
+                    parent_id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    document_title TEXT NOT NULL,
+                    parent_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    tokens_json TEXT NOT NULL,
+                    start_offset INTEGER,
+                    end_offset INTEGER,
+                    metadata_json TEXT NOT NULL,
                     FOREIGN KEY(document_id) REFERENCES knowledge_documents(document_id) ON DELETE CASCADE
                 )
                 """
@@ -275,7 +417,18 @@ class SqliteKnowledgeStore:
                 ON knowledge_documents(created_at)
                 """
             )
-            self._ensure_document_columns(connection)
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_knowledge_parent_blocks_document_index
+                ON knowledge_parent_blocks(document_id, parent_index)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_parent_id
+                ON knowledge_chunks(parent_id)
+                """
+            )
             connection.commit()
 
     def _ensure_document_columns(self, connection: sqlite3.Connection) -> None:
@@ -291,6 +444,21 @@ class SqliteKnowledgeStore:
             if column_name not in existing_columns:
                 connection.execute(f"ALTER TABLE knowledge_documents ADD COLUMN {column_name} {column_type}")
 
+    def _ensure_chunk_columns(self, connection: sqlite3.Connection) -> None:
+        existing_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(knowledge_chunks)").fetchall()
+        }
+        required_columns = {
+            "parent_id": "TEXT",
+            "parent_index": "INTEGER",
+            "start_offset": "INTEGER",
+            "end_offset": "INTEGER",
+        }
+
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                connection.execute(f"ALTER TABLE knowledge_chunks ADD COLUMN {column_name} {column_type}")
+
 
 class PostgresKnowledgeStore:
     def __init__(self, database_url: str) -> None:
@@ -305,10 +473,16 @@ class PostgresKnowledgeStore:
         with self._lock, self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("DELETE FROM knowledge_chunks")
+                cursor.execute("DELETE FROM knowledge_parent_blocks")
                 cursor.execute("DELETE FROM knowledge_documents")
             connection.commit()
 
-    def add_document(self, document: DocumentRecord, chunks: list[ChunkRecord]) -> None:
+    def add_document(
+        self,
+        document: DocumentRecord,
+        chunks: list[ChunkRecord],
+        parent_blocks: list[ParentBlockRecord] | None = None,
+    ) -> None:
         with self._lock, self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -338,12 +512,40 @@ class PostgresKnowledgeStore:
                     "DELETE FROM knowledge_chunks WHERE document_id = %s",
                     (document.document_id,),
                 )
+                cursor.execute(
+                    "DELETE FROM knowledge_parent_blocks WHERE document_id = %s",
+                    (document.document_id,),
+                )
+                if parent_blocks:
+                    cursor.executemany(
+                        """
+                        INSERT INTO knowledge_parent_blocks (
+                            parent_id, document_id, document_title, parent_index, content, tokens_json,
+                            start_offset, end_offset, metadata_json
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        [
+                            (
+                                parent.parent_id,
+                                parent.document_id,
+                                parent.document_title,
+                                parent.index,
+                                parent.content,
+                                json.dumps(parent.tokens, ensure_ascii=False, default=str),
+                                parent.start_offset,
+                                parent.end_offset,
+                                json.dumps(parent.metadata, ensure_ascii=False, default=str),
+                            )
+                            for parent in parent_blocks
+                        ],
+                    )
                 if chunks:
                     cursor.executemany(
                         """
                         INSERT INTO knowledge_chunks (
-                            chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                            embedding_provider, parent_id, parent_index, start_offset, end_offset
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         [
                             (
@@ -354,6 +556,10 @@ class PostgresKnowledgeStore:
                                 chunk.content,
                                 json.dumps(chunk.tokens, ensure_ascii=False, default=str),
                                 chunk.embedding_provider,
+                                chunk.parent_id,
+                                chunk.parent_index,
+                                chunk.start_offset,
+                                chunk.end_offset,
                             )
                             for chunk in chunks
                         ],
@@ -408,7 +614,8 @@ class PostgresKnowledgeStore:
 
                 cursor.execute(
                     """
-                    SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
+                    SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                           embedding_provider, parent_id, parent_index, start_offset, end_offset
                     FROM knowledge_chunks
                     WHERE document_id = %s
                     ORDER BY chunk_index ASC
@@ -424,7 +631,8 @@ class PostgresKnowledgeStore:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
+                    SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                           embedding_provider, parent_id, parent_index, start_offset, end_offset
                     FROM knowledge_chunks
                     ORDER BY document_id ASC, chunk_index ASC
                     """
@@ -438,7 +646,8 @@ class PostgresKnowledgeStore:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json, embedding_provider
+                    SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                           embedding_provider, parent_id, parent_index, start_offset, end_offset
                     FROM knowledge_chunks
                     WHERE chunk_id = %s
                     """,
@@ -450,6 +659,75 @@ class PostgresKnowledgeStore:
             return None
 
         return self._row_to_chunk(row)
+
+    def get_parent_block(self, parent_id: str) -> ParentBlockRecord | None:
+        with self._lock, self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT parent_id, document_id, document_title, parent_index, content, tokens_json,
+                           start_offset, end_offset, metadata_json
+                    FROM knowledge_parent_blocks
+                    WHERE parent_id = %s
+                    """,
+                    (parent_id,),
+                )
+                row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_parent_block(row)
+
+    def get_parent_blocks(self, document_id: str | None = None) -> list[ParentBlockRecord]:
+        with self._lock, self._connect() as connection:
+            with connection.cursor() as cursor:
+                if document_id is not None:
+                    cursor.execute(
+                        "SELECT document_id FROM knowledge_documents WHERE document_id = %s",
+                        (document_id,),
+                    )
+                    if cursor.fetchone() is None:
+                        raise DocumentNotFoundError(document_id)
+                    cursor.execute(
+                        """
+                        SELECT parent_id, document_id, document_title, parent_index, content, tokens_json,
+                               start_offset, end_offset, metadata_json
+                        FROM knowledge_parent_blocks
+                        WHERE document_id = %s
+                        ORDER BY parent_index ASC
+                        """,
+                        (document_id,),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        SELECT parent_id, document_id, document_title, parent_index, content, tokens_json,
+                               start_offset, end_offset, metadata_json
+                        FROM knowledge_parent_blocks
+                        ORDER BY document_id ASC, parent_index ASC
+                        """
+                    )
+                rows = cursor.fetchall()
+
+        return [self._row_to_parent_block(row) for row in rows]
+
+    def get_child_chunks_for_parent(self, parent_id: str) -> list[ChunkRecord]:
+        with self._lock, self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT chunk_id, document_id, document_title, chunk_index, content, tokens_json,
+                           embedding_provider, parent_id, parent_index, start_offset, end_offset
+                    FROM knowledge_chunks
+                    WHERE parent_id = %s
+                    ORDER BY chunk_index ASC
+                    """,
+                    (parent_id,),
+                )
+                rows = cursor.fetchall()
+
+        return [self._row_to_chunk(row) for row in rows]
 
     def set_chunk_embedding_provider(self, chunk_id: str, embedding_provider: str | None) -> None:
         with self._lock, self._connect() as connection:
@@ -513,6 +791,23 @@ class PostgresKnowledgeStore:
             content=row["content"],
             tokens=json.loads(row["tokens_json"] or "[]"),
             embedding_provider=row["embedding_provider"],
+            parent_id=row["parent_id"],
+            parent_index=row["parent_index"],
+            start_offset=row["start_offset"],
+            end_offset=row["end_offset"],
+        )
+
+    def _row_to_parent_block(self, row: dict[str, Any]) -> ParentBlockRecord:
+        return ParentBlockRecord(
+            parent_id=row["parent_id"],
+            document_id=row["document_id"],
+            document_title=row["document_title"],
+            index=int(row["parent_index"]),
+            content=row["content"],
+            tokens=json.loads(row["tokens_json"] or "[]"),
+            start_offset=row["start_offset"],
+            end_offset=row["end_offset"],
+            metadata=json.loads(row["metadata_json"] or "{}"),
         )
 
     def _connect(self):
@@ -544,7 +839,28 @@ class PostgresKnowledgeStore:
                         chunk_index INTEGER NOT NULL,
                         content TEXT NOT NULL,
                         tokens_json TEXT NOT NULL,
-                        embedding_provider TEXT
+                        embedding_provider TEXT,
+                        parent_id TEXT,
+                        parent_index INTEGER,
+                        start_offset INTEGER,
+                        end_offset INTEGER
+                    )
+                    """
+                )
+                self._ensure_document_columns(cursor)
+                self._ensure_chunk_columns(cursor)
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS knowledge_parent_blocks (
+                        parent_id TEXT PRIMARY KEY,
+                        document_id TEXT NOT NULL REFERENCES knowledge_documents(document_id) ON DELETE CASCADE,
+                        document_title TEXT NOT NULL,
+                        parent_index INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        tokens_json TEXT NOT NULL,
+                        start_offset INTEGER,
+                        end_offset INTEGER,
+                        metadata_json TEXT NOT NULL
                     )
                     """
                 )
@@ -560,7 +876,18 @@ class PostgresKnowledgeStore:
                     ON knowledge_documents(created_at)
                     """
                 )
-                self._ensure_document_columns(cursor)
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_knowledge_parent_blocks_document_index
+                    ON knowledge_parent_blocks(document_id, parent_index)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_parent_id
+                    ON knowledge_chunks(parent_id)
+                    """
+                )
             connection.commit()
 
     def _ensure_document_columns(self, cursor) -> None:
@@ -580,6 +907,26 @@ class PostgresKnowledgeStore:
         for column_name, column_type in required_columns.items():
             if column_name not in existing_columns:
                 cursor.execute(f"ALTER TABLE knowledge_documents ADD COLUMN {column_name} {column_type}")
+
+    def _ensure_chunk_columns(self, cursor) -> None:
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'knowledge_chunks'
+            """
+        )
+        existing_columns = {row["column_name"] for row in cursor.fetchall()}
+        required_columns = {
+            "parent_id": "TEXT",
+            "parent_index": "INTEGER",
+            "start_offset": "INTEGER",
+            "end_offset": "INTEGER",
+        }
+
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing_columns:
+                cursor.execute(f"ALTER TABLE knowledge_chunks ADD COLUMN {column_name} {column_type}")
 
 
 def build_knowledge_store(settings: Settings) -> KnowledgeStore:

@@ -4,10 +4,12 @@ from app.agent.runtime import AgentRuntime
 from app.core.config import Settings, get_settings
 from app.core.llm_gateway import LLMGateway, build_llm_gateway
 from app.persistence.knowledge_repository import build_knowledge_store
+from app.rag.advanced_retriever import AdvancedRetrievalSettings
 from app.persistence.message_repository import SqliteMessageRepository
 from app.persistence.run_repository import SqliteRunRepository
 from app.rag.embeddings import EmbeddingProvider, build_embedding_provider
 from app.rag.retriever import KnowledgeRetriever
+from app.rag.reranker import build_reranker
 from app.rag.store import KnowledgeStore
 from app.rag.vector_store import VectorStore, build_vector_store
 from app.services.approval_service import ApprovalService
@@ -34,20 +36,48 @@ def get_knowledge_store() -> KnowledgeStore:
 
 @lru_cache
 def get_retriever() -> KnowledgeRetriever:
+    settings = get_settings()
     return KnowledgeRetriever(
         store=get_knowledge_store(),
         vector_store=get_vector_store(),
         embedding_provider=get_embedding_provider(),
+        default_strategy=settings.default_retrieval_strategy,
+        advanced_settings=AdvancedRetrievalSettings(
+            bm25_enabled=settings.bm25_enabled,
+            vector_top_k_multiplier=settings.advanced_vector_top_k_multiplier,
+            bm25_top_k_multiplier=settings.bm25_top_k_multiplier,
+            min_child_candidates=settings.advanced_min_child_candidates,
+            parent_candidate_limit=settings.advanced_parent_candidate_limit,
+            vector_rrf_weight=settings.advanced_vector_weight,
+            bm25_rrf_weight=settings.advanced_bm25_weight,
+            evidence_bonus=settings.advanced_evidence_bonus,
+            rrf_constant=settings.advanced_rrf_constant,
+        ),
+        reranker=build_reranker(
+            provider=settings.reranker_provider,
+            model_name=settings.reranker_model,
+            device=settings.reranker_device,
+            batch_size=settings.reranker_batch_size,
+            fallback_enabled=settings.reranker_fallback_enabled,
+        ),
     )
 
 
 @lru_cache
 def get_document_service() -> DocumentService:
+    settings = get_settings()
     return DocumentService(
         store=get_knowledge_store(),
         vector_store=get_vector_store(),
         embedding_provider=get_embedding_provider(),
         retriever=get_retriever(),
+        indexing_mode=settings.rag_indexing_mode,
+        default_retrieval_strategy=settings.default_retrieval_strategy,
+        parent_chunk_size=settings.parent_chunk_size,
+        parent_chunk_overlap=settings.parent_chunk_overlap,
+        child_chunk_size=settings.child_chunk_size,
+        child_chunk_overlap=settings.child_chunk_overlap,
+        reranker_provider=settings.reranker_provider,
     )
 
 

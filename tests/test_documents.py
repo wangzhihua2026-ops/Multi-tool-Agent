@@ -52,6 +52,30 @@ def test_document_upload_list_and_search() -> None:
     assert search_hits[0]["retrieval_mode"] in {"hybrid", "vector", "lexical"}
 
 
+def test_document_search_accepts_strategy_parameter() -> None:
+    get_knowledge_store().clear()
+    get_vector_store().clear()
+
+    create_response = client.post(
+        "/api/documents",
+        json={
+            "title": "approval-guide",
+            "content": "Risky tools wait for explicit approval before execution.",
+        },
+    )
+    assert create_response.status_code == 200
+
+    search_response = client.get(
+        "/api/documents/search",
+        params={"query": "explicit approval", "strategy": "lexical"},
+    )
+
+    assert search_response.status_code == 200
+    hits = search_response.json()
+    assert hits[0]["document_title"] == "approval-guide"
+    assert hits[0]["retrieval_mode"] == "lexical"
+
+
 def test_document_file_upload_accepts_text_file() -> None:
     get_knowledge_store().clear()
     get_vector_store().clear()

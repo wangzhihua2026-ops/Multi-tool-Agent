@@ -7,13 +7,15 @@ def build_knowledge_base_tool(retriever: KnowledgeRetriever):
     def knowledge_base_tool(arguments: dict) -> ToolExecutionResult:
         query = str(arguments.get("query", "")).strip()
         top_k = int(arguments.get("top_k", 3))
+        strategy = arguments.get("strategy")
+        normalized_strategy = str(strategy).strip() if strategy is not None else None
         if not query:
             return ToolExecutionResult(
                 tool_name="search_knowledge_base",
                 content="Knowledge base query was empty.",
             )
 
-        hits = retriever.search(query=query, top_k=top_k)
+        hits = retriever.search(query=query, top_k=top_k, strategy=normalized_strategy)
         if not hits:
             return ToolExecutionResult(
                 tool_name="search_knowledge_base",
@@ -44,6 +46,10 @@ def register_knowledge_base_tool(registry: ToolRegistry, retriever: KnowledgeRet
                 "properties": {
                     "query": {"type": "string"},
                     "top_k": {"type": "integer", "default": 3},
+                    "strategy": {
+                        "type": "string",
+                        "enum": ["lexical", "vector", "hybrid", "parent_child", "parent_child_rerank"],
+                    },
                 },
                 "required": ["query"],
             },

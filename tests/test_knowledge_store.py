@@ -4,7 +4,7 @@ from app.core.config import Settings
 from app.persistence import knowledge_repository
 from app.persistence.knowledge_repository import SqliteKnowledgeStore, build_knowledge_store
 from app.rag.embeddings import HashEmbeddingProvider
-from app.rag.models import ChunkRecord, DocumentCreateRequest, DocumentRecord
+from app.rag.models import ChunkRecord, DocumentCreateRequest, DocumentRecord, ParentBlockRecord
 from app.rag.retriever import KnowledgeRetriever
 from app.rag.vector_store import InMemoryVectorStore
 from app.services.document_service import DocumentService
@@ -56,6 +56,47 @@ def test_sqlite_knowledge_store_persists_documents_and_chunks(tmp_path) -> None:
     refreshed_document = SqliteKnowledgeStore(str(database_path)).get_document(document.document_id)
     assert refreshed_document.index_status == "failed"
     assert refreshed_document.index_error == "embedding timeout"
+
+
+def test_sqlite_knowledge_store_persists_parent_blocks(tmp_path) -> None:
+    database_path = tmp_path / "knowledge_base.db"
+    store = SqliteKnowledgeStore(str(database_path))
+    document = DocumentRecord(
+        title="manual",
+        content="Parent content for child retrieval.",
+        metadata={},
+    )
+    parent = ParentBlockRecord(
+        document_id=document.document_id,
+        document_title=document.title,
+        index=0,
+        content="Parent content for child retrieval.",
+        tokens=["parent", "content", "child", "retrieval"],
+        start_offset=0,
+        end_offset=35,
+        metadata={"section": "overview"},
+    )
+    child = ChunkRecord(
+        document_id=document.document_id,
+        document_title=document.title,
+        index=0,
+        content="Parent content",
+        tokens=["parent", "content"],
+        parent_id=parent.parent_id,
+        parent_index=0,
+        start_offset=0,
+        end_offset=14,
+    )
+
+    store.add_document(document, [child], parent_blocks=[parent])
+    reopened = SqliteKnowledgeStore(str(database_path))
+
+    assert reopened.get_parent_block(parent.parent_id) == parent
+    assert reopened.get_parent_blocks(document.document_id) == [parent]
+    children = reopened.get_child_chunks_for_parent(parent.parent_id)
+    assert len(children) == 1
+    assert children[0].chunk_id == child.chunk_id
+    assert children[0].parent_id == parent.parent_id
 
 
 def test_document_service_rebuilds_vectors_from_persisted_documents(tmp_path) -> None:

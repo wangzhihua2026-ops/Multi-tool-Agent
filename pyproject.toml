@@ -26,6 +26,15 @@ dev = [
 local-embeddings = [
   "sentence-transformers>=5.4.1",
 ]
+rag-advanced = [
+  "rank-bm25>=0.2.2",
+]
+reranker = [
+  "sentence-transformers>=5.4.1",
+]
+faiss = [
+  "faiss-cpu>=1.8.0",
+]
 ocr = [
   "paddleocr>=2.8.0",
   "paddlepaddle>=2.6.0",

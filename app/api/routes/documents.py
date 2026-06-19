@@ -81,9 +81,10 @@ async def get_reindex_job(
 async def search_documents(
     query: str = Query(min_length=1),
     top_k: int = Query(default=3, ge=1, le=10),
+    strategy: str | None = Query(default=None),
     service: DocumentService = Depends(get_document_service),
 ) -> list[SearchHit]:
-    return service.search(query=query, top_k=top_k)
+    return service.search(query=query, top_k=top_k, strategy=strategy)
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)

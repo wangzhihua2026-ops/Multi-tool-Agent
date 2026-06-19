@@ -1,0 +1,952 @@
+{
+  "benchmark": "local_knowledge_retrieval_ablation",
+  "run_date": "2026-06-15",
+  "corpus_documents": 12,
+  "labelled_queries": 30,
+  "top_k": 3,
+  "latency_repeats": 3,
+  "embedding_signature": "sentence_transformers:intfloat/multilingual-e5-small:384",
+  "vector_store": "qdrant_local",
+  "ingestion_seconds": 6.331,
+  "metrics": [
+    {
+      "strategy": "lexical",
+      "hit_at_1": 0.8,
+      "recall_at_3": 0.9667,
+      "mrr_at_3": 0.8778,
+      "latency_ms": {
+        "samples": 90,
+        "p50": 0.06,
+        "p95": 0.16
+      },
+      "per_query": [
+        {
+          "query_id": "q01",
+          "category": "semantic",
+          "rank": 2,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "llm-provider",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q02",
+          "category": "identifier",
+          "rank": 2,
+          "retrieved_document_ids": [
+            "embedding-provider",
+            "llm-provider",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q03",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "mcp-http",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q04",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "embedding-provider",
+            "vector-store",
+            "reindex-signature"
+          ]
+        },
+        {
+          "query_id": "q05",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "embedding-provider",
+            "vector-store",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q06",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "vector-store",
+            "reindex-signature",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q07",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "vector-store",
+            "embedding-provider",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q08",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "mcp-http",
+            "approval-flow"
+          ]
+        },
+        {
+          "query_id": "q09",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "sse-events",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q10",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "sse-events",
+            "approval-flow"
+          ]
+        },
+        {
+          "query_id": "q11",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "sse-events",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q12",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "session-memory",
+            "extraction-export"
+          ]
+        },
+        {
+          "query_id": "q13",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "session-memory",
+            "extraction-export"
+          ]
+        },
+        {
+          "query_id": "q14",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "document-upload",
+            "session-memory"
+          ]
+        },
+        {
+          "query_id": "q15",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "approval-flow",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q16",
+          "category": "semantic",
+          "rank": 2,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "mcp-http",
+            "approval-flow"
+          ]
+        },
+        {
+          "query_id": "q17",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "session-memory",
+            "sse-events",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q18",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "session-memory",
+            "agent-runtime",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q19",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "document-upload",
+            "embedding-provider",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q20",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "document-upload",
+            "agent-runtime",
+            "extraction-export"
+          ]
+        },
+        {
+          "query_id": "q21",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "reindex-signature",
+            "embedding-provider",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q22",
+          "category": "identifier",
+          "rank": 3,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "approval-flow",
+            "reindex-signature"
+          ]
+        },
+        {
+          "query_id": "q23",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "sse-events",
+            "embedding-provider",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q24",
+          "category": "semantic",
+          "rank": null,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "vector-store",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q25",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "api-security",
+            "sse-events",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q26",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "api-security",
+            "session-memory",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q27",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "extraction-export",
+            "approval-flow",
+            "sse-events"
+          ]
+        },
+        {
+          "query_id": "q28",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "extraction-export",
+            "approval-flow",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q29",
+          "category": "identifier",
+          "rank": 2,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "mcp-http",
+            "approval-flow"
+          ]
+        },
+        {
+          "query_id": "q30",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "agent-runtime",
+            "sse-events"
+          ]
+        }
+      ]
+    },
+    {
+      "strategy": "vector",
+      "hit_at_1": 0.9,
+      "recall_at_3": 0.9667,
+      "mrr_at_3": 0.9333,
+      "latency_ms": {
+        "samples": 90,
+        "p50": 12.07,
+        "p95": 14.22
+      },
+      "per_query": [
+        {
+          "query_id": "q01",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "agent-runtime",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q02",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "mcp-http",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q03",
+          "category": "semantic",
+          "rank": 2,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "llm-provider",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q04",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "embedding-provider",
+            "llm-provider",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q05",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "embedding-provider",
+            "document-upload",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q06",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "vector-store",
+            "embedding-provider",
+            "reindex-signature"
+          ]
+        },
+        {
+          "query_id": "q07",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "vector-store",
+            "api-security",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q08",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "api-security",
+            "approval-flow"
+          ]
+        },
+        {
+          "query_id": "q09",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "approval-flow",
+            "sse-events"
+          ]
+        },
+        {
+          "query_id": "q10",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "mcp-http",
+            "sse-events"
+          ]
+        },
+        {
+          "query_id": "q11",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "agent-runtime",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q12",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "session-memory",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q13",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "api-security",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q14",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "agent-runtime",
+            "document-upload"
+          ]
+        },
+        {
+          "query_id": "q15",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "session-memory",
+            "document-upload"
+          ]
+        },
+        {
+          "query_id": "q16",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "llm-provider",
+            "document-upload"
+          ]
+        },
+        {
+          "query_id": "q17",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "session-memory",
+            "agent-runtime",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q18",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "session-memory",
+            "document-upload",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q19",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "document-upload",
+            "embedding-provider",
+            "extraction-export"
+          ]
+        },
+        {
+          "query_id": "q20",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "document-upload",
+            "extraction-export",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q21",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "reindex-signature",
+            "embedding-provider",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q22",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "reindex-signature",
+            "embedding-provider",
+            "document-upload"
+          ]
+        },
+        {
+          "query_id": "q23",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "sse-events",
+            "mcp-http",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q24",
+          "category": "semantic",
+          "rank": null,
+          "retrieved_document_ids": [
+            "session-memory",
+            "document-upload",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q25",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "api-security",
+            "llm-provider",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q26",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "api-security",
+            "sse-events",
+            "document-upload"
+          ]
+        },
+        {
+          "query_id": "q27",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "extraction-export",
+            "document-upload",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q28",
+          "category": "identifier",
+          "rank": 2,
+          "retrieved_document_ids": [
+            "document-upload",
+            "extraction-export",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q29",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "api-security",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q30",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "api-security",
+            "agent-runtime"
+          ]
+        }
+      ]
+    },
+    {
+      "strategy": "hybrid",
+      "hit_at_1": 0.9333,
+      "recall_at_3": 1.0,
+      "mrr_at_3": 0.9611,
+      "latency_ms": {
+        "samples": 90,
+        "p50": 12.24,
+        "p95": 14.12
+      },
+      "per_query": [
+        {
+          "query_id": "q01",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "agent-runtime",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q02",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "embedding-provider",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q03",
+          "category": "semantic",
+          "rank": 2,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "llm-provider",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q04",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "embedding-provider",
+            "llm-provider",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q05",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "embedding-provider",
+            "vector-store",
+            "extraction-export"
+          ]
+        },
+        {
+          "query_id": "q06",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "vector-store",
+            "embedding-provider",
+            "reindex-signature"
+          ]
+        },
+        {
+          "query_id": "q07",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "vector-store",
+            "embedding-provider",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q08",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "approval-flow",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q09",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "sse-events",
+            "approval-flow"
+          ]
+        },
+        {
+          "query_id": "q10",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "agent-runtime",
+            "sse-events",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q11",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "agent-runtime",
+            "sse-events"
+          ]
+        },
+        {
+          "query_id": "q12",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "session-memory",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q13",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "session-memory",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q14",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "document-upload",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q15",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "session-memory",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q16",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "llm-provider",
+            "sse-events"
+          ]
+        },
+        {
+          "query_id": "q17",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "session-memory",
+            "agent-runtime",
+            "sse-events"
+          ]
+        },
+        {
+          "query_id": "q18",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "session-memory",
+            "agent-runtime",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q19",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "document-upload",
+            "embedding-provider",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q20",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "document-upload",
+            "extraction-export",
+            "agent-runtime"
+          ]
+        },
+        {
+          "query_id": "q21",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "reindex-signature",
+            "embedding-provider",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q22",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "reindex-signature",
+            "embedding-provider",
+            "mcp-http"
+          ]
+        },
+        {
+          "query_id": "q23",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "sse-events",
+            "api-security",
+            "document-upload"
+          ]
+        },
+        {
+          "query_id": "q24",
+          "category": "semantic",
+          "rank": 3,
+          "retrieved_document_ids": [
+            "llm-provider",
+            "approval-flow",
+            "sse-events"
+          ]
+        },
+        {
+          "query_id": "q25",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "api-security",
+            "llm-provider",
+            "vector-store"
+          ]
+        },
+        {
+          "query_id": "q26",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "api-security",
+            "agent-runtime",
+            "llm-provider"
+          ]
+        },
+        {
+          "query_id": "q27",
+          "category": "semantic",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "extraction-export",
+            "document-upload",
+            "embedding-provider"
+          ]
+        },
+        {
+          "query_id": "q28",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "extraction-export",
+            "embedding-provider",
+            "document-upload"
+          ]
+        },
+        {
+          "query_id": "q29",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "mcp-http",
+            "llm-provider",
+            "api-security"
+          ]
+        },
+        {
+          "query_id": "q30",
+          "category": "identifier",
+          "rank": 1,
+          "retrieved_document_ids": [
+            "approval-flow",
+            "agent-runtime",
+            "api-security"
+          ]
+        }
+      ]
+    }
+  ]
+}

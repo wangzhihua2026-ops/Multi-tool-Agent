@@ -1,0 +1,74 @@
+[
+  {
+    "document_id": "llm-provider",
+    "category": "agent",
+    "title": "LLM Gateway 与工具规划",
+    "content": "系统通过 OpenAI-compatible Chat Completions 网关接入 DeepSeek，验证配置使用 deepseek-v4-flash。规划阶段把工具 JSON Schema 发送给模型，并以 Function Calling 选择知识库检索、计算或抽取工具。"
+  },
+  {
+    "document_id": "embedding-provider",
+    "category": "rag",
+    "title": "本地向量模型",
+    "content": "本地语义向量使用 Sentence-Transformers 的 intfloat/multilingual-e5-small，输出 384 维 embedding。E5 检索时分别加入 query: 与 passage: 前缀，以处理中文和英文知识库查询。"
+  },
+  {
+    "document_id": "vector-store",
+    "category": "rag",
+    "title": "Qdrant Local 向量存储",
+    "content": "Qdrant Local 将 chunk 向量持久化在本地目录，无需部署独立向量数据库服务。collection 使用 cosine distance 查询相似向量点。"
+  },
+  {
+    "document_id": "agent-runtime",
+    "category": "agent",
+    "title": "受控 Agent Runtime",
+    "content": "AgentRuntime 执行有边界的 plan -> tool -> answer 循环。MAX_TOOL_STEPS 限制最多规划轮数，每轮最多执行一个工具，避免智能体无限调用工具。"
+  },
+  {
+    "document_id": "approval-flow",
+    "category": "safety",
+    "title": "高风险工具审批",
+    "content": "send_email 属于高风险工具，执行前运行状态进入 waiting_approval 并暂停。用户 approve 或 reject 后，系统恢复运行并保存审批结果与后续回复。"
+  },
+  {
+    "document_id": "mcp-http",
+    "category": "agent",
+    "title": "MCP HTTP 扩展",
+    "content": "MCP HTTP 与 streamable_http 工具由配置加载。适配器可初始化会话、保存 mcp-session-id、通过 JSON-RPC 执行 tools/list 动态发现和 tools/call 工具调用。"
+  },
+  {
+    "document_id": "session-memory",
+    "category": "agent",
+    "title": "会话上下文管理",
+    "content": "用户与助手消息持久化到 SQLite。ChatService 按 SESSION_HISTORY_LIMIT 读取最近会话消息，在后续轮次中提供已有上下文。"
+  },
+  {
+    "document_id": "document-upload",
+    "category": "rag",
+    "title": "文档上传与解析",
+    "content": "知识库支持文本、TXT、Markdown、CSV、JSON、HTML、XML、PDF 和 DOCX 上传解析。安全配置约束文件字节数、抽取字符数与 PDF 最大页数。"
+  },
+  {
+    "document_id": "reindex-signature",
+    "category": "rag",
+    "title": "向量重建与 Embedding Signature",
+    "content": "Embedding Signature 为每个 chunk 记录 provider、model 与 dimensions。切换 embedding 模型后可重建索引，查询时过滤签名不兼容的旧向量分数。"
+  },
+  {
+    "document_id": "sse-events",
+    "category": "backend",
+    "title": "SSE 运行事件流",
+    "content": "FastAPI 对话接口以 SSE 输出结构化事件，包括 run.started、planner.completed、tool.requested、tool.completed、assistant.message 和 run.completed，前端可跟踪执行轨迹。"
+  },
+  {
+    "document_id": "api-security",
+    "category": "safety",
+    "title": "API 访问控制",
+    "content": "本地请求默认可访问 API。远程访问非健康检查接口时需要 API_AUTH_TOKEN，除非显式启用 API_ALLOW_REMOTE_WITHOUT_TOKEN 开关。"
+  },
+  {
+    "document_id": "extraction-export",
+    "category": "tool",
+    "title": "全量抽取与导出",
+    "content": "文档全量抽取结果可导出 CSV 与 XLSX。大量结果按照 limit 和 offset 分页，用户输入 continue 或 next page 可继续输出后续条目。"
+  }
+]

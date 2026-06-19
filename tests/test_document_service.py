@@ -84,6 +84,39 @@ def test_create_document_marks_failed_status_and_rolls_back_vectors() -> None:
     assert all(chunk.embedding_provider is None for chunk in store.get_document_chunks(created.document_id))
 
 
+def test_create_document_can_index_hierarchical_parent_child_chunks() -> None:
+    store = InMemoryKnowledgeStore()
+    vector_store = InMemoryVectorStore()
+    embedding_provider = HashEmbeddingProvider(dimensions=8)
+    retriever = KnowledgeRetriever(store, vector_store, embedding_provider)
+    service = DocumentService(
+        store=store,
+        vector_store=vector_store,
+        embedding_provider=embedding_provider,
+        retriever=retriever,
+        indexing_mode="hierarchical",
+        parent_chunk_size=90,
+        parent_chunk_overlap=10,
+        child_chunk_size=35,
+        child_chunk_overlap=5,
+    )
+
+    summary = service.create_document(
+        DocumentCreateRequest(
+            title="ops",
+            content="Deployment setup paragraph.\n\nHealth checks paragraph.\n\nRollback paragraph.",
+            metadata={},
+        )
+    )
+
+    parents = store.get_parent_blocks(summary.document_id)
+    chunks = store.get_document_chunks(summary.document_id)
+    assert parents
+    assert chunks
+    assert all(chunk.parent_id for chunk in chunks)
+    assert vector_store.count() == len(chunks)
+
+
 def test_reindex_keeps_existing_vectors_when_embeddings_fail() -> None:
     store = InMemoryKnowledgeStore()
     vector_store = InMemoryVectorStore()

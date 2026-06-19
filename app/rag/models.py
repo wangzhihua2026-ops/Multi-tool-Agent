@@ -32,6 +32,18 @@ class DocumentRecord(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ParentBlockRecord(BaseModel):
+    parent_id: str = Field(default_factory=lambda: str(uuid4()))
+    document_id: str
+    document_title: str
+    index: int
+    content: str
+    tokens: list[str] = Field(default_factory=list)
+    start_offset: int | None = None
+    end_offset: int | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
 class ChunkRecord(BaseModel):
     chunk_id: str = Field(default_factory=lambda: str(uuid4()))
     document_id: str
@@ -40,6 +52,10 @@ class ChunkRecord(BaseModel):
     content: str
     tokens: list[str] = Field(default_factory=list)
     embedding_provider: str | None = None
+    parent_id: str | None = None
+    parent_index: int | None = None
+    start_offset: int | None = None
+    end_offset: int | None = None
 
 
 class DocumentSummary(BaseModel):
@@ -74,3 +90,12 @@ class SearchHit(BaseModel):
     retrieval_mode: str = "hybrid"
     lexical_score: float | None = None
     vector_score: float | None = None
+
+
+class ParentSearchHit(SearchHit):
+    parent_id: str
+    parent_index: int
+    evidence_chunk_ids: list[str] = Field(default_factory=list)
+    bm25_score: float | None = None
+    rerank_score: float | None = None
+    aggregated_child_score: float | None = None

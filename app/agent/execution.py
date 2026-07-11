@@ -28,6 +28,12 @@ class ErrorClass(StrEnum):
     NEEDS_ATTENTION = "needs_attention"
 
 
+class CheckpointAction(StrEnum):
+    PLAN = "plan"
+    TOOL = "tool"
+    ANSWER = "answer"
+
+
 class ExecutionCheckpoint(BaseModel):
     run_id: str
     session_id: str
@@ -39,6 +45,8 @@ class ExecutionCheckpoint(BaseModel):
     pending_tool_name: str | None = None
     pending_tool_arguments: dict[str, Any] = Field(default_factory=dict)
     approval_decision: bool | None = None
+    pending_action: CheckpointAction = CheckpointAction.PLAN
+    draft_answer: str = ""
 
 
 class StepOutcome(BaseModel):

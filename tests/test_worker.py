@@ -4,7 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings, get_settings
-from app.worker import WorkerSettings, execute_run, shutdown, startup
+from app.worker import (
+    WorkerSettings,
+    dispatch_outbox,
+    execute_run,
+    recover_runs,
+    shutdown,
+    startup,
+)
 
 
 def test_execute_run_delegates_to_orchestrator() -> None:
@@ -52,6 +59,22 @@ def test_worker_shutdown_closes_resources() -> None:
     asyncio.run(scenario())
 
 
+def test_worker_periodic_services_are_invoked() -> None:
+    async def scenario() -> None:
+        outbox = PeriodicRecorder()
+        recovery = RecoveryRecorder()
+        ctx = {"outbox_service": outbox, "recovery_service": recovery}
+
+        await dispatch_outbox(ctx)
+        await recover_runs(ctx)
+
+        assert outbox.calls == 1
+        assert recovery.expired_calls == 1
+        assert recovery.retry_calls == 1
+
+    asyncio.run(scenario())
+
+
 class RecordingOrchestrator:
     def __init__(self) -> None:
         self.run_ids: list[str] = []
@@ -66,3 +89,26 @@ class CloseRecorder:
 
     async def close(self) -> None:
         self.closed = True
+
+
+class PeriodicRecorder:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def dispatch_once(self) -> int:
+        self.calls += 1
+        return 1
+
+
+class RecoveryRecorder:
+    def __init__(self) -> None:
+        self.expired_calls = 0
+        self.retry_calls = 0
+
+    async def requeue_expired_leases(self) -> int:
+        self.expired_calls += 1
+        return 1
+
+    async def requeue_due_retries(self) -> int:
+        self.retry_calls += 1
+        return 1

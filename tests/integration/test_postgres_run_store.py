@@ -131,3 +131,27 @@ def test_postgres_step_checkpoint_is_idempotent() -> None:
         await store.close()
 
     asyncio.run(scenario())
+
+
+def test_postgres_expired_lease_requeues_once() -> None:
+    async def scenario() -> None:
+        run_id = "00000000-0000-0000-0000-000000000007"
+        store = PostgresRunStore.from_url(os.environ["TEST_DATABASE_URL"])
+        await store.clear_for_test()
+        await store.create_run_with_outbox(NewRun.model_validate({
+            "run_id": run_id,
+            "session_id": "integration",
+            "user_message": "recover",
+            "created_at": "2026-07-12T00:00:00Z",
+        }))
+        initial = (await store.list_unpublished_outbox(10))[0]
+        await store.mark_outbox_published(initial.outbox_id)
+        assert await store.claim_run(run_id, "dead-worker", -1) is not None
+
+        assert await store.requeue_expired_leases_with_outbox(100) == 1
+        assert await store.requeue_expired_leases_with_outbox(100) == 0
+        assert (await store.get_run(run_id)).status is RunStatus.QUEUED
+        assert len(await store.list_unpublished_outbox(10)) == 1
+        await store.close()
+
+    asyncio.run(scenario())

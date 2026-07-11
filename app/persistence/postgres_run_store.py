@@ -171,6 +171,28 @@ class PostgresRunStore:
             output=row["output_json"],
         )
 
+    async def list_steps(self, run_id: str) -> list[StoredStep]:
+        statement = (
+            select(run_steps)
+            .where(run_steps.c.run_id == run_id)
+            .order_by(run_steps.c.sequence, run_steps.c.step_type)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).mappings().all()
+        return [
+            StoredStep(
+                step_id=row["step_id"],
+                run_id=row["run_id"],
+                sequence=row["sequence"],
+                step_type=StepType(row["step_type"]),
+                status=StepStatus(row["status"]),
+                idempotency_key=row["idempotency_key"],
+                checkpoint=ExecutionCheckpoint.model_validate(row["checkpoint_json"]),
+                output=row["output_json"],
+            )
+            for row in rows
+        ]
+
     async def save_step(self, step: StoredStep, target_status: RunStatus) -> StoredRun:
         now = datetime.now(timezone.utc)
         statement = (
@@ -262,19 +284,176 @@ class PostgresRunStore:
 
     async def decide_approval(self, approval_id: str, approved: bool, actor: str) -> bool:
         now = datetime.now(timezone.utc)
-        statement = (
-            update(run_approvals)
-            .where(run_approvals.c.approval_id == approval_id)
-            .where(run_approvals.c.status == "pending")
-            .values(
-                status="approved" if approved else "rejected",
-                decision_by=actor,
-                decided_at=now,
-            )
-        )
         async with self._sessions.begin() as session:
-            result = await session.execute(statement)
-        return result.rowcount == 1
+            pending = (
+                await session.execute(
+                    select(
+                        run_approvals.c.run_id,
+                        agent_runs.c.version,
+                    )
+                    .select_from(
+                        run_approvals.join(
+                            agent_runs,
+                            run_approvals.c.run_id == agent_runs.c.run_id,
+                        )
+                    )
+                    .where(run_approvals.c.approval_id == approval_id)
+                    .where(run_approvals.c.status == "pending")
+                    .where(agent_runs.c.status == RunStatus.WAITING_APPROVAL.value)
+                    .with_for_update()
+                )
+            ).mappings().one_or_none()
+            if pending is None:
+                return False
+            await session.execute(
+                update(run_approvals)
+                .where(run_approvals.c.approval_id == approval_id)
+                .values(
+                    status="approved" if approved else "rejected",
+                    decision_by=actor,
+                    decided_at=now,
+                )
+            )
+            version = int(pending["version"]) + 1
+            await session.execute(
+                update(agent_runs)
+                .where(agent_runs.c.run_id == pending["run_id"])
+                .values(
+                    status=RunStatus.QUEUED.value,
+                    version=version,
+                    updated_at=now,
+                )
+            )
+            await session.execute(
+                pg_insert(outbox_events)
+                .values(
+                    outbox_id=str(uuid4()),
+                    topic="agent.run.dispatch",
+                    deduplication_key=f"dispatch:{pending['run_id']}:{version}",
+                    payload_json={"run_id": pending["run_id"]},
+                    attempt_count=0,
+                    created_at=now,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[outbox_events.c.deduplication_key]
+                )
+            )
+        return True
+
+    async def request_cancel(self, run_id: str) -> StoredRun:
+        now = datetime.now(timezone.utc)
+        async with self._sessions.begin() as session:
+            row = (
+                await session.execute(
+                    select(agent_runs)
+                    .where(agent_runs.c.run_id == run_id)
+                    .with_for_update()
+                )
+            ).mappings().one()
+            status = RunStatus(row["status"])
+            if status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELED}:
+                values: dict[str, Any] = {
+                    "cancel_requested_at": now,
+                    "updated_at": now,
+                }
+                if status is not RunStatus.RUNNING:
+                    values.update(
+                        status=RunStatus.CANCELED.value,
+                        version=int(row["version"]) + 1,
+                        lease_owner=None,
+                        lease_expires_at=None,
+                        completed_at=now,
+                    )
+                await session.execute(
+                    update(agent_runs)
+                    .where(agent_runs.c.run_id == run_id)
+                    .values(**values)
+                )
+        return await self.get_run(run_id)
+
+    async def schedule_retry(
+        self,
+        run_id: str,
+        next_retry_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> StoredRun:
+        now = datetime.now(timezone.utc)
+        async with self._sessions.begin() as session:
+            await session.execute(
+                update(agent_runs)
+                .where(agent_runs.c.run_id == run_id)
+                .where(agent_runs.c.status == RunStatus.RUNNING.value)
+                .values(
+                    status=RunStatus.RETRY_SCHEDULED.value,
+                    version=agent_runs.c.version + 1,
+                    next_retry_at=next_retry_at,
+                    error_code=error_code,
+                    error_message=error_message,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    updated_at=now,
+                )
+            )
+        return await self.get_run(run_id)
+
+    async def requeue_expired_leases_with_outbox(self, limit: int) -> int:
+        now = datetime.now(timezone.utc)
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.execute(
+                    select(agent_runs.c.run_id, agent_runs.c.version)
+                    .where(agent_runs.c.status == RunStatus.RUNNING.value)
+                    .where(agent_runs.c.lease_expires_at < now)
+                    .order_by(agent_runs.c.lease_expires_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            ).mappings().all()
+            for row in rows:
+                version = int(row["version"]) + 1
+                await session.execute(
+                    update(agent_runs)
+                    .where(agent_runs.c.run_id == row["run_id"])
+                    .values(
+                        status=RunStatus.QUEUED.value,
+                        version=version,
+                        attempt_count=agent_runs.c.attempt_count + 1,
+                        lease_owner=None,
+                        lease_expires_at=None,
+                        updated_at=now,
+                    )
+                )
+                await self._insert_dispatch_outbox(session, row["run_id"], version, now)
+        return len(rows)
+
+    async def requeue_due_retries_with_outbox(self, limit: int) -> int:
+        now = datetime.now(timezone.utc)
+        async with self._sessions.begin() as session:
+            rows = (
+                await session.execute(
+                    select(agent_runs.c.run_id, agent_runs.c.version)
+                    .where(agent_runs.c.status == RunStatus.RETRY_SCHEDULED.value)
+                    .where(agent_runs.c.next_retry_at <= now)
+                    .order_by(agent_runs.c.next_retry_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            ).mappings().all()
+            for row in rows:
+                version = int(row["version"]) + 1
+                await session.execute(
+                    update(agent_runs)
+                    .where(agent_runs.c.run_id == row["run_id"])
+                    .values(
+                        status=RunStatus.QUEUED.value,
+                        version=version,
+                        next_retry_at=None,
+                        updated_at=now,
+                    )
+                )
+                await self._insert_dispatch_outbox(session, row["run_id"], version, now)
+        return len(rows)
 
     async def append_event(
         self, run_id: str, event_type: str, data: dict[str, Any]
@@ -377,6 +556,31 @@ class PostgresRunStore:
             lease_owner=row["lease_owner"],
             lease_expires_at=row["lease_expires_at"],
             cancel_requested_at=row["cancel_requested_at"],
+            next_retry_at=row["next_retry_at"],
+            error_code=row["error_code"],
+            error_message=row["error_message"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+        )
+
+    async def _insert_dispatch_outbox(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        version: int,
+        created_at: datetime,
+    ) -> None:
+        await session.execute(
+            pg_insert(outbox_events)
+            .values(
+                outbox_id=str(uuid4()),
+                topic="agent.run.dispatch",
+                deduplication_key=f"dispatch:{run_id}:{version}",
+                payload_json={"run_id": run_id},
+                attempt_count=0,
+                created_at=created_at,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[outbox_events.c.deduplication_key]
+            )
         )

@@ -29,6 +29,9 @@ class StoredRun(BaseModel):
     lease_owner: str | None = None
     lease_expires_at: datetime | None = None
     cancel_requested_at: datetime | None = None
+    next_retry_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -87,6 +90,8 @@ class RunStore(Protocol):
         self, run_id: str, idempotency_key: str
     ) -> StoredStep | None: ...
 
+    async def list_steps(self, run_id: str) -> list[StoredStep]: ...
+
     async def save_step(self, step: StoredStep, target_status: RunStatus) -> StoredRun: ...
 
     async def create_pending_approval(
@@ -100,6 +105,14 @@ class RunStore(Protocol):
     async def decide_approval(self, approval_id: str, approved: bool, actor: str) -> bool: ...
 
     async def request_cancel(self, run_id: str) -> StoredRun: ...
+
+    async def schedule_retry(
+        self,
+        run_id: str,
+        next_retry_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> StoredRun: ...
 
     async def append_event(
         self, run_id: str, event_type: str, data: dict[str, Any]
@@ -125,6 +138,7 @@ class InMemoryRunStore:
         self._events: dict[str, list[StoredEvent]] = {}
         self._outbox: dict[str, OutboxRecord] = {}
         self._steps: dict[tuple[str, str], StoredStep] = {}
+        self._approvals: dict[str, StoredApproval] = {}
 
     async def create_run_with_outbox(self, run: NewRun) -> StoredRun:
         async with self._lock:
@@ -216,6 +230,17 @@ class InMemoryRunStore:
                 return None
             return step.model_copy(deep=True)
 
+    async def list_steps(self, run_id: str) -> list[StoredStep]:
+        async with self._lock:
+            return sorted(
+                (
+                    step.model_copy(deep=True)
+                    for (stored_run_id, _), step in self._steps.items()
+                    if stored_run_id == run_id
+                ),
+                key=lambda step: (step.sequence, step.step_type.value),
+            )
+
     async def save_step(self, step: StoredStep, target_status: RunStatus) -> StoredRun:
         async with self._lock:
             run = self._runs.get(step.run_id)
@@ -239,6 +264,167 @@ class InMemoryRunStore:
                 )
                 self._runs[step.run_id] = run
             return self._runs[step.run_id].model_copy(deep=True)
+
+    async def create_pending_approval(
+        self,
+        run_id: str,
+        step_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> StoredApproval:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise KeyError(f"Run not found: {run_id}")
+            if run.status is not RunStatus.RUNNING:
+                raise ValueError(f"Run is not running: {run_id}")
+            approval = StoredApproval(
+                approval_id=str(uuid4()),
+                run_id=run_id,
+                step_id=step_id,
+                status="pending",
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+            now = datetime.now(timezone.utc)
+            self._approvals[approval.approval_id] = approval
+            self._runs[run_id] = run.model_copy(
+                update={
+                    "status": RunStatus.WAITING_APPROVAL,
+                    "version": run.version + 1,
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "updated_at": now,
+                },
+                deep=True,
+            )
+            return approval.model_copy(deep=True)
+
+    async def decide_approval(self, approval_id: str, approved: bool, actor: str) -> bool:
+        async with self._lock:
+            approval = self._approvals.get(approval_id)
+            if approval is None or approval.status != "pending":
+                return False
+            run = self._runs[approval.run_id]
+            if run.status is not RunStatus.WAITING_APPROVAL:
+                return False
+            self._approvals[approval_id] = approval.model_copy(
+                update={"status": "approved" if approved else "rejected"},
+                deep=True,
+            )
+            now = datetime.now(timezone.utc)
+            version = run.version + 1
+            self._runs[run.run_id] = run.model_copy(
+                update={
+                    "status": RunStatus.QUEUED,
+                    "version": version,
+                    "updated_at": now,
+                },
+                deep=True,
+            )
+            self._add_dispatch_outbox(run.run_id, version, now)
+            return True
+
+    async def request_cancel(self, run_id: str) -> StoredRun:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise KeyError(f"Run not found: {run_id}")
+            if run.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELED}:
+                return run.model_copy(deep=True)
+            now = datetime.now(timezone.utc)
+            if run.status is RunStatus.RUNNING:
+                updates: dict[str, Any] = {"cancel_requested_at": now, "updated_at": now}
+            else:
+                updates = {
+                    "status": RunStatus.CANCELED,
+                    "version": run.version + 1,
+                    "cancel_requested_at": now,
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "updated_at": now,
+                }
+            updated = run.model_copy(update=updates, deep=True)
+            self._runs[run_id] = updated
+            return updated.model_copy(deep=True)
+
+    async def schedule_retry(
+        self,
+        run_id: str,
+        next_retry_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> StoredRun:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise KeyError(f"Run not found: {run_id}")
+            now = datetime.now(timezone.utc)
+            updated = run.model_copy(
+                update={
+                    "status": RunStatus.RETRY_SCHEDULED,
+                    "version": run.version + 1,
+                    "next_retry_at": next_retry_at,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "updated_at": now,
+                },
+                deep=True,
+            )
+            self._runs[run_id] = updated
+            return updated.model_copy(deep=True)
+
+    async def requeue_expired_leases_with_outbox(self, limit: int) -> int:
+        async with self._lock:
+            now = datetime.now(timezone.utc)
+            candidates = [
+                run
+                for run in self._runs.values()
+                if run.status is RunStatus.RUNNING
+                and run.lease_expires_at is not None
+                and run.lease_expires_at < now
+            ][:limit]
+            for run in candidates:
+                version = run.version + 1
+                self._runs[run.run_id] = run.model_copy(
+                    update={
+                        "status": RunStatus.QUEUED,
+                        "version": version,
+                        "attempt_count": run.attempt_count + 1,
+                        "lease_owner": None,
+                        "lease_expires_at": None,
+                        "updated_at": now,
+                    },
+                    deep=True,
+                )
+                self._add_dispatch_outbox(run.run_id, version, now)
+            return len(candidates)
+
+    async def requeue_due_retries_with_outbox(self, limit: int) -> int:
+        async with self._lock:
+            now = datetime.now(timezone.utc)
+            candidates = [
+                run
+                for run in self._runs.values()
+                if run.status is RunStatus.RETRY_SCHEDULED
+                and run.next_retry_at is not None
+                and run.next_retry_at <= now
+            ][:limit]
+            for run in candidates:
+                version = run.version + 1
+                self._runs[run.run_id] = run.model_copy(
+                    update={
+                        "status": RunStatus.QUEUED,
+                        "version": version,
+                        "next_retry_at": None,
+                        "updated_at": now,
+                    },
+                    deep=True,
+                )
+                self._add_dispatch_outbox(run.run_id, version, now)
+            return len(candidates)
 
     async def append_event(
         self, run_id: str, event_type: str, data: dict[str, Any]
@@ -283,3 +469,18 @@ class InMemoryRunStore:
                 update={"published_at": datetime.now(timezone.utc)}
             )
             return True
+
+    def _add_dispatch_outbox(self, run_id: str, version: int, created_at: datetime) -> None:
+        deduplication_key = f"dispatch:{run_id}:{version}"
+        if any(
+            record.deduplication_key == deduplication_key
+            for record in self._outbox.values()
+        ):
+            return
+        record = OutboxRecord(
+            outbox_id=str(uuid4()),
+            topic="agent.run.dispatch",
+            deduplication_key=deduplication_key,
+            payload={"run_id": run_id},
+        )
+        self._outbox[record.outbox_id] = record

@@ -7,13 +7,17 @@ from app.persistence.knowledge_repository import build_knowledge_store
 from app.rag.advanced_retriever import AdvancedRetrievalSettings
 from app.persistence.message_repository import SqliteMessageRepository
 from app.persistence.run_repository import SqliteRunRepository
+from app.persistence.postgres_run_store import PostgresRunStore
+from app.persistence.run_store import RunStore
 from app.rag.embeddings import EmbeddingProvider, build_embedding_provider
 from app.rag.retriever import KnowledgeRetriever
 from app.rag.reranker import build_reranker
 from app.rag.store import KnowledgeStore
 from app.rag.vector_store import VectorStore, build_vector_store
 from app.services.approval_service import ApprovalService
+from app.services.async_run_service import AsyncRunService
 from app.services.document_service import DocumentService
+from app.services.durable_chat_streamer import DurableChatStreamer
 from app.services.message_service import MessageService
 from app.services.reindex_job_service import ReindexJobService
 from app.services.run_service import RunService
@@ -99,6 +103,31 @@ def get_embedding_provider() -> EmbeddingProvider:
 @lru_cache
 def get_run_repository() -> SqliteRunRepository:
     return SqliteRunRepository(get_settings().run_storage_path)
+
+
+@lru_cache
+def get_platform_run_store() -> RunStore:
+    database_url = get_settings().platform_database_url
+    if not database_url:
+        raise RuntimeError("PLATFORM_DATABASE_URL is required for durable run APIs.")
+    return PostgresRunStore.from_url(database_url)
+
+
+def get_async_run_service() -> AsyncRunService:
+    return AsyncRunService(get_platform_run_store())
+
+
+def get_optional_platform_run_store() -> RunStore | None:
+    if not get_settings().agent_worker_enabled:
+        return None
+    return get_platform_run_store()
+
+
+def get_durable_chat_streamer() -> DurableChatStreamer | None:
+    settings = get_settings()
+    if not settings.agent_worker_enabled:
+        return None
+    return DurableChatStreamer(get_platform_run_store(), settings)
 
 
 @lru_cache

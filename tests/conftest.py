@@ -15,6 +15,7 @@ def _clear_dependency_caches() -> None:
     dependencies.get_vector_store.cache_clear()
     dependencies.get_embedding_provider.cache_clear()
     dependencies.get_run_repository.cache_clear()
+    dependencies.get_platform_run_store.cache_clear()
     dependencies.get_message_repository.cache_clear()
     dependencies.get_message_service.cache_clear()
     dependencies.get_tool_service.cache_clear()

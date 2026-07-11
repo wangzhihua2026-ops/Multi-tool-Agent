@@ -66,3 +66,23 @@ def test_postgres_approval_compare_and_set_is_single_use() -> None:
         await store.close()
 
     asyncio.run(scenario())
+
+
+def test_postgres_outbox_publish_compare_and_set() -> None:
+    async def scenario() -> None:
+        store = PostgresRunStore.from_url(os.environ["TEST_DATABASE_URL"])
+        await store.clear_for_test()
+        await store.create_run_with_outbox(NewRun.model_validate({
+            "run_id": "00000000-0000-0000-0000-000000000004",
+            "session_id": "integration",
+            "user_message": "dispatch",
+            "created_at": "2026-07-12T00:00:00Z",
+        }))
+        records = await store.list_unpublished_outbox(limit=10)
+
+        assert await store.mark_outbox_published(records[0].outbox_id) is True
+        assert await store.mark_outbox_published(records[0].outbox_id) is False
+        assert await store.list_unpublished_outbox(limit=10) == []
+        await store.close()
+
+    asyncio.run(scenario())

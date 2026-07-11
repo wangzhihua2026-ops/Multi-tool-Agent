@@ -188,3 +188,13 @@ class InMemoryRunStore:
                 for record in self._outbox.values()
                 if record.published_at is None
             ][:limit]
+
+    async def mark_outbox_published(self, outbox_id: str) -> bool:
+        async with self._lock:
+            record = self._outbox.get(outbox_id)
+            if record is None or record.published_at is not None:
+                return False
+            self._outbox[outbox_id] = record.model_copy(
+                update={"published_at": datetime.now(timezone.utc)}
+            )
+            return True

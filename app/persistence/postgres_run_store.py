@@ -253,6 +253,17 @@ class PostgresRunStore:
             for row in rows
         ]
 
+    async def mark_outbox_published(self, outbox_id: str) -> bool:
+        statement = (
+            update(outbox_events)
+            .where(outbox_events.c.outbox_id == outbox_id)
+            .where(outbox_events.c.published_at.is_(None))
+            .values(published_at=datetime.now(timezone.utc))
+        )
+        async with self._sessions.begin() as session:
+            result = await session.execute(statement)
+        return result.rowcount == 1
+
     def _run_from_row(self, row: Any) -> StoredRun:
         checkpoint = row["checkpoint_json"]
         return StoredRun(

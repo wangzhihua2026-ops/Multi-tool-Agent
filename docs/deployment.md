@@ -15,8 +15,10 @@ Before shared deployment, replace `API_AUTH_TOKEN` and `MONITORING_TOKEN`, termi
 
 - Status: pending provider/account selection
 - Public health URL: pending
-- Platform: pending
-- Deployment commit: pending final commit
+- Platform candidate: Render (account link pending approval)
+- Deployment blueprint commit: `32675c2d6a3f2b1dd67c1a5deeef12ec4f534fc0`
+- Deployment CI gate: `test-platform` completed successfully
+- CI evidence: `https://github.com/wangzhihua2026-ops/Multi-tool-Agent/actions/runs/29164719693`
 - Provider mode: mock by default
 - Secrets: never committed
 

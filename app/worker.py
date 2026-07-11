@@ -31,6 +31,7 @@ async def startup(ctx: dict) -> None:
         raise ValueError("PLATFORM_DATABASE_URL is required for the Agent worker.")
     redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     store = PostgresRunStore.from_url(settings.platform_database_url)
+    queue = RedisRunQueue(redis)
     ctx["redis"] = redis
     ctx["store"] = store
     ctx["outbox_service"] = OutboxService(store, queue)
@@ -39,7 +40,7 @@ async def startup(ctx: dict) -> None:
         store=store,
         runtime=get_runtime(),
         worker_id="arq-worker",
-        queue=RedisRunQueue(redis),
+        queue=queue,
         lease_seconds=settings.agent_worker_lease_seconds,
     )
 
@@ -54,6 +55,7 @@ async def shutdown(ctx: dict) -> None:
 
 
 class WorkerSettings:
+    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
     functions = [execute_run]
     on_startup = startup
     on_shutdown = shutdown

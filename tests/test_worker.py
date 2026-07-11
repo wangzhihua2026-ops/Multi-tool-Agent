@@ -36,6 +36,7 @@ def test_worker_settings_register_lifecycle_and_job() -> None:
     assert WorkerSettings.functions == [execute_run]
     assert WorkerSettings.on_startup is startup
     assert WorkerSettings.on_shutdown is shutdown
+    assert WorkerSettings.redis_settings.host
 
 
 def test_worker_startup_requires_database_url(monkeypatch) -> None:

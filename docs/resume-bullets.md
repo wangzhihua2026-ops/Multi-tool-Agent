@@ -1,50 +1,27 @@
-# Resume Bullets and Interview Notes
+# 简历表述与面试要点
 
-## Project Name
+## 项目名称
 
-企业知识库多工具 Agent 系统
+企业内部智能知识问答系统
 
-Alternative English title:
+名称无需修改；增强后把技术定位升级为“可恢复的企业知识 Agent 执行平台”。
 
-Multi-Tool Knowledge Base Agent System
+## 推荐简历描述
 
-## One-Line Summary
+- 基于 FastAPI、PostgreSQL、Redis 与异步 Worker，将进程内知识问答 Agent 升级为可恢复执行平台，持久化 Run/Step/Event 状态，支持幂等重试、租约恢复、人工审批续跑和 SSE 断线续传。
+- 设计 transactional outbox 与 Redis ARQ 队列解耦提交和执行，通过步骤幂等键、审批 compare-and-set、过期租约重排避免重复副作用；Docker Compose 实测 API、Worker、PostgreSQL、Redis 四服务健康运行。
+- 构建 lexical/vector/RRF 混合检索、父子分块及可选 reranker，保留文档上传、PDF/DOCX/OCR、知识检索和受控工具调用能力。
+- 建立 30 个确定性 Agent 场景、10 类故障注入检查、Prometheus 指标与 OpenTelemetry step spans；本地全量 `182 passed`，真实 PostgreSQL/Redis 集成测试通过。
+- 完成 50 个 mock Run 并发提交与执行：50/50 到达 completed，提交延迟 P50 `510.69 ms`、P95 `532.97 ms`，整批完成 `5018.41 ms`（Windows Docker Desktop，2026-07-12）。
 
-基于 FastAPI + SSE 构建本地优先的企业知识库 Agent，支持文档上传、RAG 检索、多工具调用、人工审批、运行轨迹持久化、可复现评测和容器化交付。
+## 一句话介绍
 
-## Recommended Resume Bullets
+这是一个面向企业内部知识问答的 Agent 平台：不仅完成 RAG 与工具调用，还把执行状态、审批、重试、恢复、实时事件、评测和容器化交付做成了可验证的后端工程闭环。
 
-- 基于 FastAPI + SSE 设计企业知识库 Agent，支持文档上传、RAG 检索、多工具调用、人工审批和运行轨迹持久化。
-- 构建 lexical + vector + RRF 混合检索链路，接入 Qdrant Local 与 `multilingual-e5-small`，并通过 embedding signature 避免向量版本混用。
-- 建立可复现 RAG 评测集，对 lexical、vector、hybrid 策略进行消融实验，输出 Hit@1、Recall@3、MRR@3 与 P95 延迟指标；Hybrid Hit@1 `93.3%`、Recall@3 `100.0%`、MRR@3 `96.1%`。
-- 设计受控 Agent Runtime，限制最多 3 轮工具调用，支持高风险工具暂停审批、恢复执行和事件级 trace。
-- 编写一键基线验收脚本，串联 `pytest`、端到端 demo 与 retrieval benchmark；当前 `78` 个测试通过，并补充 Dockerfile、docker-compose 和 GitHub Actions workflow。
+## 面试边界
 
-- Enhanced the document parsing path with `pdfplumber` PDF text/table extraction and optional PaddleOCR support for scanned PDFs and image OCR while keeping the parsed output connected to the existing chunking, embedding, and Qdrant Local retrieval flow.
+可以声明：本地 Docker Compose 四服务部署、182 项自动化测试、50 Run mock 并发实测、PostgreSQL/Redis 集成与恢复验证。
 
-## Short Version
+暂不声明：生产流量、真实大模型质量提升、云端公开部署 SLA。公开 URL 完成验证后再补入简历。
 
-- 实现 FastAPI + SSE 知识库 Agent，支持 RAG、工具调用、审批流和 trace 持久化。
-- 使用 Qdrant Local + `multilingual-e5-small` 构建 lexical/vector/RRF 混合检索，并以 embedding signature 避免向量版本混用。
-- 构建 30 条人工标注查询的检索评测，Hybrid Hit@1 `93.3%`、Recall@3 `100.0%`、MRR@3 `96.1%`。
-- 补齐一键基线、Docker/Compose、GitHub Actions 和项目文档，使项目具备可复现演示能力。
-
-## Interview Q&A Anchors
-
-### What Makes This More Than an API Demo?
-
-它把 LLM 放进了完整工程链路：文档接入、RAG、工具注册、审批、trace、持久化、测试、评测和容器化交付。核心不是“调用模型”，而是让模型调用变得可控、可观测、可复现。
-
-### Why Hybrid Retrieval?
-
-纯向量检索适合语义问题，但对短关键词、缩写、编号和工具名不稳定；lexical 对精确匹配强，但语义泛化弱。项目用加权 RRF 合并排序，避免直接混合不同量纲的原始分数。
-
-### What Is the Biggest Current Limitation?
-
-目前评测集仍偏小，只有 `12` 段语料和 `30` 条标注查询；还没有端到端回答 groundedness 评测、reranker、真实云部署和大规模压测。Docker/CI 配置已经补齐，但仍需在 GitHub Actions 或 Docker 环境中完成最终验证。
-
-## Metric Source of Truth
-
-- Latest benchmark report: `evaluation/results/retrieval_benchmark_latest.md`
-- Baseline audit: `docs/baseline-audit-2026-06-15.md`
-- Project status: `docs/project-status-2026-06-15.md`
+证据来源：`docs/agent-platform-verification.md` 与 `evaluation/results/agent_platform_latest.md`。

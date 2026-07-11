@@ -15,8 +15,10 @@ COPY config ./config
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY tests ./tests
+COPY scripts ./scripts
+COPY evaluation ./evaluation
 
-ARG INSTALL_EXTRAS=""
+ARG INSTALL_EXTRAS="platform,observability,postgres"
 RUN python -m pip install --upgrade pip \
     && if [ -n "$INSTALL_EXTRAS" ]; then \
         python -m pip install -e ".[${INSTALL_EXTRAS}]"; \

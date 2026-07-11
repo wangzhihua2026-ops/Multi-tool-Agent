@@ -1,14 +1,14 @@
-# Project Status - 2026-06-19
+# Project Status - updated 2026-07-12
 
 ## Current Positioning
 
-Project_Loverboy01 is now a local-first enterprise knowledge-base Agent system with FastAPI + SSE, bounded tool calling, human approval, persisted traces, document parsing, hybrid retrieval, parent-child RAG, optional reranking, and reproducible tests/evaluation hooks.
+Project_Loverboy01 is now a durable enterprise knowledge Agent execution platform with FastAPI, replayable SSE, PostgreSQL Run/Step/Event state, Redis/ARQ workers, bounded tools, approval recovery, observability, document parsing, hybrid retrieval, parent-child RAG, and reproducible evaluation.
 
 The parent-child retrieval work is implemented behind conservative defaults. Existing flat indexing and `hybrid` retrieval remain the default behavior, while `hierarchical`, `parent_child`, and `parent_child_rerank` can be enabled through configuration or explicit search strategy parameters.
 
 ## Verified Implementation Status
 
-Fresh verification on 2026-06-19:
+Fresh verification on 2026-07-12:
 
 ```powershell
 .\.venv312\Scripts\python.exe -m compileall app scripts
@@ -18,7 +18,9 @@ Fresh verification on 2026-06-19:
 Results:
 
 - Syntax compile: passed
-- Test suite: `129 passed`
+- Test suite: `182 passed`
+- Docker Compose: API, worker, PostgreSQL, and Redis healthy; migration exit 0
+- Concurrency: 50/50 mock runs completed; submission P50 510.69 ms, P95 532.97 ms
 - Warning: pytest could not write `.pytest_cache` because of local filesystem permissions; this did not affect test execution.
 
 ## Parent-Child RAG Scope

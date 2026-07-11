@@ -1,34 +1,92 @@
+x-app-environment: &app-environment
+  APP_NAME: "Enterprise Knowledge Agent Platform"
+  ENVIRONMENT: "docker"
+  LOG_LEVEL: "INFO"
+  LLM_PROVIDER: "mock"
+  EMBEDDING_PROVIDER: "hash"
+  VECTOR_STORE_PROVIDER: "memory"
+  AGENT_WORKER_ENABLED: "true"
+  PLATFORM_DATABASE_URL: "postgresql+asyncpg://agent:agent@postgres:5432/agent"
+  REDIS_URL: "redis://redis:6379/0"
+  KNOWLEDGE_STORE_PROVIDER: "postgres"
+  KNOWLEDGE_STORE_DATABASE_URL: "postgresql://agent:agent@postgres:5432/agent"
+  API_AUTH_TOKEN: "${API_AUTH_TOKEN:-local-demo-token}"
+  MONITORING_TOKEN: "${MONITORING_TOKEN:-local-monitor-token}"
+
+x-app-image: &app-image
+  build:
+    context: .
+    args:
+      INSTALL_EXTRAS: "platform,observability,postgres"
+  image: enterprise-knowledge-agent:${IMAGE_TAG:-local}
+
 services:
-  agent:
-    build:
-      context: .
-    ports:
-      - "8000:8000"
+  postgres:
+    image: postgres:16-alpine
     environment:
-      APP_NAME: "Multi Tool Agent"
-      ENVIRONMENT: "docker"
-      LOG_LEVEL: "INFO"
-      LLM_PROVIDER: "mock"
-      EMBEDDING_PROVIDER: "hash"
-      EMBEDDING_DIMENSIONS: "128"
-      KNOWLEDGE_STORE_PROVIDER: "sqlite"
-      KNOWLEDGE_STORE_PATH: "/app/data/knowledge_base.db"
-      VECTOR_STORE_PROVIDER: "memory"
-      RUN_STORAGE_PATH: "/app/data/multi_tool_agent.db"
-      EXTRACTION_EXPORT_PATH: "/app/data/exports"
-      API_ALLOW_REMOTE_WITHOUT_TOKEN: "true"
+      POSTGRES_DB: agent
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
     volumes:
-      - agent-data:/app/data
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).read()"
-      interval: 30s
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app-image
+    environment: *app-environment
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app-image
+    environment: *app-environment
+    command: ["uvicorn", "app.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).read()"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
       start_period: 10s
 
+  worker:
+    <<: *app-image
+    environment: *app-environment
+    command: ["arq", "app.worker.WorkerSettings"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; assert os.path.exists('/proc/1')"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
 volumes:
-  agent-data:
+  postgres-data:
+  redis-data:

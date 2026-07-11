@@ -14,7 +14,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-baseline.ps1 -DemoPort 
 
 Expected evidence:
 
-- `129 passed`
+- `182 passed`
 - upload/search/reindex/SSE chat passed
 - retrieval benchmark script can compare flat and parent-child strategies
 
@@ -70,7 +70,7 @@ Show or mention:
 
 Use verified local evidence:
 
-- `129 passed`
+- `182 passed`
 - Hybrid Hit@1 `93.3%`
 - Recall@3 `100.0%`
 - MRR@3 `96.1%`
@@ -92,6 +92,12 @@ Use verified local evidence:
 - Show benchmark report under `evaluation/results/`.
 - Show Docker/CI files.
 - End with one honest next step.
+
+## Durable Platform Update (2026-07-12)
+
+Start the verified four-service profile with `docker compose up -d --build`. Show `docker compose ps` with healthy API, worker, PostgreSQL, and Redis; create an async run with `POST /api/runs`; then show Run/Step/Event persistence, replayable SSE, Prometheus metrics, approval recovery, and the 30-case evaluation report.
+
+Verified evidence: `182 passed`, 50/50 concurrent mock runs completed, submission P50 `510.69 ms` and P95 `532.97 ms`. Public cloud deployment remains pending and should not be claimed yet.
 
 ## Good Interview Line
 

@@ -4,7 +4,7 @@ This repository contains a local-first knowledge-base Agent system built with Fa
 
 ## Current status
 
-Last verified on `2026-06-19` with:
+Last verified on `2026-07-12` with PostgreSQL and Redis integration services enabled:
 
 ```powershell
 .\.venv312\Scripts\python.exe -m pytest -q
@@ -12,14 +12,14 @@ Last verified on `2026-06-19` with:
 
 | Area | Status | Evidence |
 | --- | --- | --- |
-| API and Agent runtime | Implemented | FastAPI + SSE, bounded `Plan -> Tool -> Answer`, max 3 tool rounds |
+| API and Agent runtime | Implemented | Durable Run/Step/Event state, replayable SSE, bounded `Plan -> Tool -> Answer`, approvals and recovery |
 | RAG retrieval | Implemented | Flat lexical/vector/hybrid retrieval plus parent-child strategies with child vector recall, BM25 recall, parent aggregation, and optional CrossEncoder reranking |
-| Evaluation | Reproducible local baseline | `129 passed`; benchmark script compares lexical/vector/hybrid/parent_child/parent_child_rerank and reports Recall@5 plus parent/evidence counts |
+| Evaluation | Reproducible local baseline | `182 passed`; 30 deterministic Agent cases, 10 fault scenarios, and retrieval benchmarks |
 | Demo path | One-command local verification | document upload, search, reindex, and SSE chat pass through `scripts/verify-local-embeddings.ps1` |
-| Delivery | Packaged for handoff | `Dockerfile`, `docker-compose.yml`, and GitHub Actions workflow are present |
+| Delivery | Locally verified | Healthy API, ARQ worker, PostgreSQL, and Redis Compose services with one-shot migrations |
 | Security posture | Local-first | `.env` is ignored, remote API access requires explicit token/configuration |
 
-Docker is not installed in the current local workspace, so the image build is configured in CI but has not been locally built on this machine.
+Local evidence includes 50/50 concurrent mock runs completed through the containerized API; see `docs/agent-platform-verification.md` for measured latency.
 
 ## Architecture
 
@@ -86,7 +86,7 @@ The launcher waits for the API to become ready and then opens the browser automa
 
 ## Docker quick start
 
-Build and run the local demo container:
+Build and run the durable Agent platform:
 
 ```bash
 docker compose up --build
@@ -94,7 +94,7 @@ docker compose up --build
 
 Then open `http://127.0.0.1:8000/app/`.
 
-The default Compose profile uses deterministic local settings: `LLM_PROVIDER=mock`, `EMBEDDING_PROVIDER=hash`, SQLite metadata storage, and an in-memory vector store. It also sets `API_ALLOW_REMOTE_WITHOUT_TOKEN=true` so the browser on the host can call the containerized local API during development. For a shared or hosted deployment, set `API_AUTH_TOKEN` instead.
+The Compose profile uses deterministic mock/hash providers with PostgreSQL durable state, Redis queueing, Alembic migration, API authentication, and a separate ARQ worker. Replace the example local tokens before shared or public use.
 
 You can also build the image directly:
 

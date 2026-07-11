@@ -1,3 +1,4 @@
+import argparse
 from dataclasses import dataclass
 
 
@@ -30,6 +31,9 @@ def run_checks() -> list[CheckResult]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.parse_args()
     results = run_checks()
     for result in results:
         state = "PASS" if result.passed else "FAIL"

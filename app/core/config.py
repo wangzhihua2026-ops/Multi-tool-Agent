@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_prefix: str = "/api"
     api_auth_token: str | None = None
+    monitoring_token: str | None = None
     api_allow_remote_without_token: bool = False
     llm_provider: str = "mock"
     llm_base_url: str = "https://api.openai.com/v1"

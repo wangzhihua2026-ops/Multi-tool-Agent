@@ -36,3 +36,10 @@ def test_web_app_javascript_allows_image_uploads() -> None:
     assert response.status_code == 200
     assert '".png"' in response.text
     assert '"image/png"' in response.text
+
+
+def test_web_app_renders_durable_step_timeline_fields() -> None:
+    response = client.get("/app/app.js")
+    assert response.status_code == 200
+    for field in ("Step type", "State", "Latency", "Retries", "Model / tool", "Error class"):
+        assert field in response.text

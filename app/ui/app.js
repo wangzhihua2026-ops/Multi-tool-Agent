@@ -759,6 +759,9 @@ function renderRuns(runs) {
 async function loadRunDetail(runId, keepSession = false) {
   try {
     const detail = await fetchJson(apiUrl(`/runs/${runId}`));
+    if (!Array.isArray(detail.events)) {
+      detail.steps = await fetchJson(apiUrl(`/runs/${runId}/steps`));
+    }
     state.currentRunId = detail.run_id;
     state.currentRunDetail = detail;
     renderRunDetail(detail);
@@ -774,7 +777,9 @@ async function loadRunDetail(runId, keepSession = false) {
 function renderRunDetail(detail) {
   elements.runDetailStatus.textContent = `${detail.status} | ${detail.model || "local planner"}`;
 
-  if (!detail.events.length) {
+  if (Array.isArray(detail.steps)) {
+    renderDurableSteps(detail);
+  } else if (!detail.events.length) {
     renderEmpty(elements.runDetail, "No event payloads were recorded for this run.");
   } else {
     const fragment = document.createDocumentFragment();
@@ -801,6 +806,38 @@ function renderRunDetail(detail) {
 
   const waitingApproval = detail.status === "waiting_approval";
   elements.approvalActions.classList.toggle("hidden", !waitingApproval);
+}
+
+function renderDurableSteps(detail) {
+  if (!detail.steps.length) {
+    renderEmpty(elements.runDetail, "No durable steps were recorded for this run.");
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  detail.steps.forEach((step) => {
+    const card = document.createElement("article");
+    card.className = "run-event-card step-timeline-card";
+    const tool = step.checkpoint?.pending_tool_name || "—";
+    const rows = [
+      ["Step type", step.step_type],
+      ["State", step.status],
+      ["Latency", step.output?.latency_ms ? `${step.output.latency_ms} ms` : "n/a"],
+      ["Retries", String(detail.attempt_count || 0)],
+      ["Model / tool", step.output?.model || tool],
+      ["Error class", detail.error_code || "—"],
+    ];
+    const heading = document.createElement("strong");
+    heading.textContent = `${step.sequence}. ${step.step_type}`;
+    card.appendChild(heading);
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.className = "step-timeline-row";
+      row.textContent = `${label}: ${value}`;
+      card.appendChild(row);
+    });
+    fragment.appendChild(card);
+  });
+  replaceChildren(elements.runDetail, fragment);
 }
 
 function syncDocumentUploadPanel(documentCount) {

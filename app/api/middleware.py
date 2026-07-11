@@ -45,6 +45,16 @@ def _access_error(request: Request) -> JSONResponse | None:
     settings = get_settings()
     path = request.url.path
     public_health_path = f"{settings.api_prefix.rstrip('/')}/health"
+    if path == "/metrics":
+        if _is_local_request(request):
+            return None
+        supplied_token = _extract_api_token(request)
+        if settings.monitoring_token and supplied_token == settings.monitoring_token:
+            return None
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Metrics require localhost access or a monitoring token."},
+        )
     if not path.startswith(settings.api_prefix.rstrip("/") + "/"):
         return None
     if path == public_health_path:

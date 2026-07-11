@@ -30,6 +30,11 @@ platform = [
   "redis>=5.2,<6",
   "sqlalchemy>=2.0.36,<3",
 ]
+observability = [
+  "opentelemetry-api>=1.29,<2",
+  "opentelemetry-sdk>=1.29,<2",
+  "prometheus-client>=0.21,<1",
+]
 local-embeddings = [
   "sentence-transformers>=5.4.1",
 ]

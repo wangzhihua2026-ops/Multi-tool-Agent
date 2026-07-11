@@ -10,6 +10,8 @@ from app.agent.execution import (
 )
 from app.agent.state import RunStatus
 from app.persistence.run_store import RunStore, StoredStep
+from app.observability.metrics import platform_metrics
+from app.observability.tracing import step_span_name, tracer
 from app.queue.run_queue import RunQueue
 
 
@@ -60,7 +62,12 @@ class RunOrchestrator:
                 checkpoint=completed.checkpoint,
             )
 
-        outcome = await self.runtime.advance(checkpoint)
+        with tracer.start_as_current_span(step_span_name(expected_type.value)) as span:
+            span.set_attribute("agent.step.type", expected_type.value)
+            span.set_attribute("agent.retry.count", run.attempt_count)
+            if checkpoint.pending_tool_name:
+                span.set_attribute("agent.tool.name", checkpoint.pending_tool_name)
+            outcome = await self.runtime.advance(checkpoint)
         target_status = RunStatus.RUNNING
         if outcome.waiting_for_approval:
             target_status = RunStatus.WAITING_APPROVAL
@@ -82,6 +89,17 @@ class RunOrchestrator:
             },
         )
         await self.store.save_step(step, target_status)
+        platform_metrics.steps_total.labels(
+            type=outcome.step_type.value,
+            status=StepStatus.COMPLETED.value,
+        ).inc()
+        if outcome.step_type is StepType.TOOL_CALL:
+            platform_metrics.tool_calls_total.labels(
+                tool=checkpoint.pending_tool_name or "unknown",
+                status=StepStatus.COMPLETED.value,
+            ).inc()
+        if target_status in {RunStatus.COMPLETED, RunStatus.WAITING_APPROVAL}:
+            platform_metrics.runs_total.labels(status=target_status.value).inc()
         for payload in outcome.events:
             event = await self.store.append_event(
                 run_id,

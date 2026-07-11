@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -124,6 +124,7 @@ class InMemoryRunStore:
         self._runs: dict[str, StoredRun] = {}
         self._events: dict[str, list[StoredEvent]] = {}
         self._outbox: dict[str, OutboxRecord] = {}
+        self._steps: dict[tuple[str, str], StoredStep] = {}
 
     async def create_run_with_outbox(self, run: NewRun) -> StoredRun:
         async with self._lock:
@@ -154,6 +155,90 @@ class InMemoryRunStore:
                 return self._runs[run_id].model_copy(deep=True)
             except KeyError as exc:
                 raise KeyError(f"Run not found: {run_id}") from exc
+
+    async def claim_run(
+        self, run_id: str, worker_id: str, lease_seconds: int
+    ) -> StoredRun | None:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise KeyError(f"Run not found: {run_id}")
+            now = datetime.now(timezone.utc)
+            eligible = run.status in {RunStatus.QUEUED, RunStatus.RETRY_SCHEDULED}
+            lease_available = run.lease_expires_at is None or run.lease_expires_at < now
+            if not eligible or not lease_available:
+                return None
+            updated = run.model_copy(
+                update={
+                    "status": RunStatus.RUNNING,
+                    "version": run.version + 1,
+                    "lease_owner": worker_id,
+                    "lease_expires_at": now + timedelta(seconds=lease_seconds),
+                    "updated_at": now,
+                },
+                deep=True,
+            )
+            self._runs[run_id] = updated
+            return updated.model_copy(deep=True)
+
+    async def renew_lease(self, run_id: str, worker_id: str, lease_seconds: int) -> bool:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None or run.lease_owner != worker_id or run.status is not RunStatus.RUNNING:
+                return False
+            now = datetime.now(timezone.utc)
+            self._runs[run_id] = run.model_copy(
+                update={
+                    "lease_expires_at": now + timedelta(seconds=lease_seconds),
+                    "updated_at": now,
+                },
+                deep=True,
+            )
+            return True
+
+    async def release_lease(self, run_id: str, worker_id: str) -> bool:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None or run.lease_owner != worker_id:
+                return False
+            self._runs[run_id] = run.model_copy(
+                update={"lease_owner": None, "lease_expires_at": None},
+                deep=True,
+            )
+            return True
+
+    async def get_completed_step(
+        self, run_id: str, idempotency_key: str
+    ) -> StoredStep | None:
+        async with self._lock:
+            step = self._steps.get((run_id, idempotency_key))
+            if step is None or step.status is not StepStatus.COMPLETED:
+                return None
+            return step.model_copy(deep=True)
+
+    async def save_step(self, step: StoredStep, target_status: RunStatus) -> StoredRun:
+        async with self._lock:
+            run = self._runs.get(step.run_id)
+            if run is None:
+                raise KeyError(f"Run not found: {step.run_id}")
+            key = (step.run_id, step.idempotency_key)
+            if key not in self._steps:
+                self._steps[key] = step.model_copy(deep=True)
+                now = datetime.now(timezone.utc)
+                clear_lease = target_status is not RunStatus.RUNNING
+                run = run.model_copy(
+                    update={
+                        "status": target_status,
+                        "checkpoint": step.checkpoint.model_copy(deep=True),
+                        "version": run.version + 1,
+                        "updated_at": now,
+                        "lease_owner": None if clear_lease else run.lease_owner,
+                        "lease_expires_at": None if clear_lease else run.lease_expires_at,
+                    },
+                    deep=True,
+                )
+                self._runs[step.run_id] = run
+            return self._runs[step.run_id].model_copy(deep=True)
 
     async def append_event(
         self, run_id: str, event_type: str, data: dict[str, Any]

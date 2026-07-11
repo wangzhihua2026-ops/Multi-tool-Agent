@@ -4,7 +4,9 @@ import os
 import pytest
 
 from app.persistence.postgres_run_store import PostgresRunStore
-from app.persistence.run_store import NewRun
+from app.agent.execution import CheckpointAction, ExecutionCheckpoint, StepStatus, StepType
+from app.agent.state import RunStatus
+from app.persistence.run_store import NewRun, StoredStep
 
 
 pytestmark = pytest.mark.skipif(
@@ -83,6 +85,49 @@ def test_postgres_outbox_publish_compare_and_set() -> None:
         assert await store.mark_outbox_published(records[0].outbox_id) is True
         assert await store.mark_outbox_published(records[0].outbox_id) is False
         assert await store.list_unpublished_outbox(limit=10) == []
+        await store.close()
+
+    asyncio.run(scenario())
+
+
+def test_postgres_step_checkpoint_is_idempotent() -> None:
+    async def scenario() -> None:
+        run_id = "00000000-0000-0000-0000-000000000005"
+        store = PostgresRunStore.from_url(os.environ["TEST_DATABASE_URL"])
+        await store.clear_for_test()
+        await store.create_run_with_outbox(NewRun.model_validate({
+            "run_id": run_id,
+            "session_id": "integration",
+            "user_message": "checkpoint",
+            "created_at": "2026-07-12T00:00:00Z",
+        }))
+        assert await store.claim_run(run_id, "worker-a", 30) is not None
+        checkpoint = ExecutionCheckpoint(
+            run_id=run_id,
+            session_id="integration",
+            user_message="checkpoint",
+            pending_action=CheckpointAction.TOOL,
+            pending_tool_name="calculator",
+            pending_tool_arguments={"expression": "2 + 2"},
+        )
+        step = StoredStep(
+            step_id="00000000-0000-0000-0000-000000000006",
+            run_id=run_id,
+            sequence=1,
+            step_type=StepType.PLAN,
+            status=StepStatus.COMPLETED,
+            idempotency_key=f"{run_id}:1:plan",
+            checkpoint=checkpoint,
+        )
+
+        first = await store.save_step(step, RunStatus.RUNNING)
+        second = await store.save_step(step, RunStatus.RUNNING)
+        completed = await store.get_completed_step(run_id, step.idempotency_key)
+
+        assert first.checkpoint == checkpoint
+        assert second.checkpoint == checkpoint
+        assert completed is not None
+        assert completed.step_id == step.step_id
         await store.close()
 
     asyncio.run(scenario())

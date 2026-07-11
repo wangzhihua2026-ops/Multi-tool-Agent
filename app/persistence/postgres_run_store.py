@@ -3,9 +3,10 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import delete, func, insert, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.agent.execution import ExecutionCheckpoint
+from app.agent.execution import ExecutionCheckpoint, StepStatus, StepType
 from app.agent.state import RunStatus
 from app.persistence.db import create_database
 from app.persistence.platform_tables import (
@@ -22,6 +23,7 @@ from app.persistence.run_store import (
     StoredApproval,
     StoredEvent,
     StoredRun,
+    StoredStep,
 )
 
 
@@ -117,6 +119,103 @@ class PostgresRunStore:
         async with self._sessions.begin() as session:
             row = (await session.execute(statement)).mappings().one_or_none()
         return self._run_from_row(row) if row is not None else None
+
+    async def renew_lease(self, run_id: str, worker_id: str, lease_seconds: int) -> bool:
+        now = datetime.now(timezone.utc)
+        statement = (
+            update(agent_runs)
+            .where(agent_runs.c.run_id == run_id)
+            .where(agent_runs.c.status == RunStatus.RUNNING.value)
+            .where(agent_runs.c.lease_owner == worker_id)
+            .values(
+                lease_expires_at=now + timedelta(seconds=lease_seconds),
+                updated_at=now,
+            )
+        )
+        async with self._sessions.begin() as session:
+            result = await session.execute(statement)
+        return result.rowcount == 1
+
+    async def release_lease(self, run_id: str, worker_id: str) -> bool:
+        statement = (
+            update(agent_runs)
+            .where(agent_runs.c.run_id == run_id)
+            .where(agent_runs.c.lease_owner == worker_id)
+            .values(lease_owner=None, lease_expires_at=None)
+        )
+        async with self._sessions.begin() as session:
+            result = await session.execute(statement)
+        return result.rowcount == 1
+
+    async def get_completed_step(
+        self, run_id: str, idempotency_key: str
+    ) -> StoredStep | None:
+        statement = (
+            select(run_steps)
+            .where(run_steps.c.run_id == run_id)
+            .where(run_steps.c.idempotency_key == idempotency_key)
+            .where(run_steps.c.status == StepStatus.COMPLETED.value)
+        )
+        async with self._sessions() as session:
+            row = (await session.execute(statement)).mappings().one_or_none()
+        if row is None:
+            return None
+        return StoredStep(
+            step_id=row["step_id"],
+            run_id=row["run_id"],
+            sequence=row["sequence"],
+            step_type=StepType(row["step_type"]),
+            status=StepStatus(row["status"]),
+            idempotency_key=row["idempotency_key"],
+            checkpoint=ExecutionCheckpoint.model_validate(row["checkpoint_json"]),
+            output=row["output_json"],
+        )
+
+    async def save_step(self, step: StoredStep, target_status: RunStatus) -> StoredRun:
+        now = datetime.now(timezone.utc)
+        statement = (
+            pg_insert(run_steps)
+            .values(
+                step_id=step.step_id,
+                run_id=step.run_id,
+                sequence=step.sequence,
+                step_type=step.step_type.value,
+                status=step.status.value,
+                idempotency_key=step.idempotency_key,
+                checkpoint_json=step.checkpoint.model_dump(mode="json"),
+                input_json={},
+                output_json=step.output,
+                attempt_count=0,
+                completed_at=now,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[run_steps.c.run_id, run_steps.c.idempotency_key]
+            )
+        )
+        async with self._sessions.begin() as session:
+            result = await session.execute(statement)
+            if result.rowcount == 1:
+                clear_lease = target_status is not RunStatus.RUNNING
+                await session.execute(
+                    update(agent_runs)
+                    .where(agent_runs.c.run_id == step.run_id)
+                    .values(
+                        status=target_status.value,
+                        checkpoint_json=step.checkpoint.model_dump(mode="json"),
+                        version=agent_runs.c.version + 1,
+                        updated_at=now,
+                        lease_owner=None if clear_lease else agent_runs.c.lease_owner,
+                        lease_expires_at=None if clear_lease else agent_runs.c.lease_expires_at,
+                        completed_at=now
+                        if target_status in {
+                            RunStatus.COMPLETED,
+                            RunStatus.FAILED,
+                            RunStatus.CANCELED,
+                        }
+                        else agent_runs.c.completed_at,
+                    )
+                )
+        return await self.get_run(step.run_id)
 
     async def create_pending_approval(
         self,

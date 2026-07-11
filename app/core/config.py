@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -63,6 +64,14 @@ class Settings(BaseSettings):
     max_tool_retries: int = 3
     knowledge_base_enabled: bool = False
     run_storage_path: str = "./data/multi_tool_agent.db"
+    platform_database_url: str | None = None
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    agent_worker_enabled: bool = False
+    agent_worker_lease_seconds: int = 60
+    agent_worker_heartbeat_seconds: int = 20
+    agent_run_max_attempts: int = 3
+    agent_outbox_poll_seconds: float = 1.0
+    agent_recovery_poll_seconds: float = 5.0
     document_upload_max_bytes: int = 20 * 1024 * 1024
     document_upload_max_extracted_chars: int = 2_000_000
     document_pdf_max_pages: int = 300
@@ -86,6 +95,15 @@ class Settings(BaseSettings):
     @property
     def resolved_embedding_api_key(self) -> str | None:
         return self.embedding_api_key or self.resolved_llm_api_key
+
+    @model_validator(mode="after")
+    def validate_worker_lease(self) -> "Settings":
+        if (
+            self.agent_worker_enabled
+            and self.agent_worker_heartbeat_seconds >= self.agent_worker_lease_seconds
+        ):
+            raise ValueError("Agent worker heartbeat must be shorter than its lease.")
+        return self
 
 
 @lru_cache

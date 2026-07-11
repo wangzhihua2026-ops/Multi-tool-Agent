@@ -12,6 +12,9 @@ RUN addgroup --system app && adduser --system --ingroup app app
 COPY pyproject.toml README.md ./
 COPY app ./app
 COPY config ./config
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY tests ./tests
 
 ARG INSTALL_EXTRAS=""
 RUN python -m pip install --upgrade pip \

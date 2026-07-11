@@ -1,0 +1,98 @@
+services:
+  - type: keyvalue
+    name: enterprise-agent-redis
+    region: singapore
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  - type: web
+    name: enterprise-knowledge-agent-api
+    runtime: docker
+    region: singapore
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: uvicorn app.api.server:app --host 0.0.0.0 --port 10000
+    preDeployCommand: alembic upgrade head
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_NAME
+        value: Enterprise Knowledge Agent Platform
+      - key: ENVIRONMENT
+        value: render
+      - key: LLM_PROVIDER
+        value: mock
+      - key: EMBEDDING_PROVIDER
+        value: hash
+      - key: VECTOR_STORE_PROVIDER
+        value: memory
+      - key: AGENT_WORKER_ENABLED
+        value: "true"
+      - key: API_AUTH_TOKEN
+        generateValue: true
+      - key: MONITORING_TOKEN
+        generateValue: true
+      - key: PLATFORM_DATABASE_URL
+        fromDatabase:
+          name: enterprise-agent-postgres
+          property: connectionString
+      - key: KNOWLEDGE_STORE_PROVIDER
+        value: postgres
+      - key: KNOWLEDGE_STORE_DATABASE_URL
+        fromDatabase:
+          name: enterprise-agent-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: enterprise-agent-redis
+          property: connectionString
+
+  - type: worker
+    name: enterprise-knowledge-agent-worker
+    runtime: docker
+    region: singapore
+    plan: starter
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: arq app.worker.WorkerSettings
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: ENVIRONMENT
+        value: render
+      - key: LLM_PROVIDER
+        value: mock
+      - key: EMBEDDING_PROVIDER
+        value: hash
+      - key: VECTOR_STORE_PROVIDER
+        value: memory
+      - key: AGENT_WORKER_ENABLED
+        value: "true"
+      - key: PLATFORM_DATABASE_URL
+        fromDatabase:
+          name: enterprise-agent-postgres
+          property: connectionString
+      - key: KNOWLEDGE_STORE_PROVIDER
+        value: postgres
+      - key: KNOWLEDGE_STORE_DATABASE_URL
+        fromDatabase:
+          name: enterprise-agent-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: enterprise-agent-redis
+          property: connectionString
+
+databases:
+  - name: enterprise-agent-postgres
+    region: singapore
+    plan: free
+    databaseName: agent
+    user: agent
+    postgresMajorVersion: "16"
+    ipAllowList: []

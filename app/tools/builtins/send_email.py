@@ -1,7 +1,7 @@
 import re
 
 from app.tools.registry import ToolRegistry
-from app.tools.schemas import ToolDefinition, ToolExecutionResult
+from app.tools.schemas import ToolDefinition, ToolExecutionResult, ToolExecutionSemantics
 
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
@@ -48,6 +48,7 @@ def register_send_email_tool(registry: ToolRegistry) -> None:
             },
             risk_level="high",
             approval_required=True,
+            execution_semantics=ToolExecutionSemantics.NON_IDEMPOTENT_SIDE_EFFECT,
         ),
         send_email_tool,
     )

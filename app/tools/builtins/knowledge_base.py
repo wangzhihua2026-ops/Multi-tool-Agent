@@ -1,6 +1,6 @@
 from app.rag.retriever import KnowledgeRetriever
 from app.tools.registry import ToolRegistry
-from app.tools.schemas import ToolDefinition, ToolExecutionResult
+from app.tools.schemas import ToolDefinition, ToolExecutionResult, ToolExecutionSemantics
 
 
 def build_knowledge_base_tool(retriever: KnowledgeRetriever):
@@ -53,6 +53,7 @@ def register_knowledge_base_tool(registry: ToolRegistry, retriever: KnowledgeRet
                 },
                 "required": ["query"],
             },
+            execution_semantics=ToolExecutionSemantics.READ_ONLY,
         ),
         build_knowledge_base_tool(retriever),
     )

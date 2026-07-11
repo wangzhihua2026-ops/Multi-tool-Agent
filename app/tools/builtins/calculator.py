@@ -3,7 +3,7 @@ import math
 import operator
 
 from app.tools.registry import ToolRegistry
-from app.tools.schemas import ToolDefinition, ToolExecutionResult
+from app.tools.schemas import ToolDefinition, ToolExecutionResult, ToolExecutionSemantics
 
 
 MAX_EXPRESSION_LENGTH = 200
@@ -105,6 +105,7 @@ def register_calculator_tool(registry: ToolRegistry) -> None:
                 },
                 "required": ["expression"],
             },
+            execution_semantics=ToolExecutionSemantics.READ_ONLY,
         ),
         calculator_tool,
     )

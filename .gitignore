@@ -5,6 +5,7 @@ data/
 __pycache__/
 .pytest_cache/
 .git-permission-blocked*/
+.worktrees/
 git-meta/
 *.py[cod]
 *.pyo
